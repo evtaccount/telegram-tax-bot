@@ -272,26 +272,6 @@ func buildReport(data Data) string {
 	return builder.String()
 }
 
-func handleSetDateCommand(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
-	text := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/setdate"))
-	if text == "" {
-		msg := tgbotapi.NewMessage(msg.Chat.ID, "Укажите дату в формате ДД.ММ.ГГГГ, например: /setdate 15.04.2025")
-		bot.Send(msg)
-		return
-	}
-	parsed, err := parseDate(text)
-	if err != nil {
-		msg := tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ")
-		bot.Send(msg)
-		return
-	}
-	s.Data.Current = parsed.Format("02.01.2006")
-	saveSession(s)
-	report := buildReport(s.Data)
-	response := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report))
-	bot.Send(response)
-}
-
 func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
 	backupSession(s)
 	err := json.Unmarshal([]byte(msg.Text), &s.Data)
@@ -327,93 +307,147 @@ func main() {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message == nil {
+
+		// Обработка нажатий на inline-кнопки
+		if update.CallbackQuery != nil {
+			callback := update.CallbackQuery
+			userID := callback.From.ID
+			s := getSession(userID)
+			data := callback.Data
+			chatID := callback.Message.Chat.ID
+
+			switch data {
+			case "start":
+				handleStartCommand(s, callback.Message, bot)
+			case "help":
+				handleHelpCommand(callback.Message, bot)
+			case "reset":
+				handleResetCommand(s, callback.Message, bot)
+			case "undo":
+				handleUndoCommand(s, callback.Message, bot)
+			case "set_date":
+				handleSetDateCommand(s, callback.Message, bot)
+			case "upload_report", "upload_file":
+				handleUploadCommand(s, callback.Message, bot)
+			case "periods":
+				handlePeriodsCommand(s, callback.Message, bot)
+			case "show_report":
+				report := buildReport(s.Data)
+				bot.Send(tgbotapi.NewMessage(chatID, report))
+			default:
+				bot.Send(tgbotapi.NewMessage(chatID, "❓ Неизвестная кнопка."))
+			}
+
+			bot.Request(tgbotapi.NewCallback(callback.ID, ""))
 			continue
 		}
 
-		msg := update.Message
-		userID := msg.From.ID
+		// Обработка текстовых сообщений
+		if update.Message != nil {
+			msg := update.Message
+			userID := msg.From.ID
+			s := getSession(userID)
+			text := msg.Text
 
-		s := getSession(userID)
-
-		text := msg.Text
-
-		// Загрузка файла после upload_report
-		if msg.Document != nil && s.Data.Current == "upload_pending" {
-			handleInputFile(msg, s, bot)
-			continue
-		}
-
-		// Обработка даты после /setdate
-		if s.PendingAction == "awaiting_date" {
-			handleDateInput(msg, s, bot)
-			continue
-		}
-
-		switch {
-		case strings.HasPrefix(text, "/start"):
-			msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
-			msg.ReplyMarkup = buildMainMenu(s)
-			bot.Send(msg)
-
-		case strings.HasPrefix(text, "/help"):
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID,
-				"ℹ️ Доступные команды:\n"+
-					"/start — меню\n"+
-					"/help — помощь\n"+
-					"/periods — список всех сохранённых периодов\n"+
-					"/upload_report — загрузить JSON-файл\n"+
-					"/setdate — установить дату расчета\n"+
-					"/reset — сброс данных\n"+
-					"/undo — отменить последнее изменение"))
-
-		case strings.HasPrefix(text, "/reset"):
-			if isEmpty(s) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+			// Шаг 1: если ждем дату
+			if s.PendingAction == "awaiting_date" {
+				handleDateInput(msg, s, bot)
 				continue
 			}
-			s.Data = Data{}
-			s.Backup = Data{}
-			_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
-			saveSession(s)
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
 
-		case strings.HasPrefix(text, "/undo"):
-			if isEmpty(s) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+			// Шаг 2: если загружаем JSON
+			if msg.Document != nil && s.Data.Current == "upload_pending" {
+				handleInputFile(msg, s, bot)
 				continue
 			}
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, undoSession(s)))
 
-		case strings.HasPrefix(text, "/setdate"):
-			if isEmpty(s) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
-				continue
-			}
-			s.PendingAction = "awaiting_date"
-			saveSession(s)
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ"))
-
-		case strings.HasPrefix(text, "/upload_report"):
-			s.Data.Current = "upload_pending"
-			saveSession(s)
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте JSON-файл как документ."))
-
-		case strings.HasPrefix(text, "/periods"):
-			if isEmpty(s) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
-				continue
-			}
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, buildPeriodsList(s)))
-
-		default:
-			if strings.HasPrefix(text, "{") {
-				handleJSONInput(msg, s, bot)
-			} else {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help для списка."))
+			// Шаг 3: команды
+			switch {
+			case strings.HasPrefix(text, "/start"):
+				handleStartCommand(s, msg, bot)
+			case strings.HasPrefix(text, "/help"):
+				handleHelpCommand(msg, bot)
+			case strings.HasPrefix(text, "/reset"):
+				handleResetCommand(s, msg, bot)
+			case strings.HasPrefix(text, "/undo"):
+				handleUndoCommand(s, msg, bot)
+			case strings.HasPrefix(text, "/setdate"):
+				handleSetDateCommand(s, msg, bot)
+			case strings.HasPrefix(text, "/upload_report"):
+				handleUploadCommand(s, msg, bot)
+			case strings.HasPrefix(text, "/periods"):
+				handlePeriodsCommand(s, msg, bot)
+			default:
+				if strings.HasPrefix(text, "{") {
+					handleJSONInput(msg, s, bot)
+				} else {
+					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help для списка."))
+				}
 			}
 		}
 	}
+}
+
+func handleStartCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	reply := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
+	reply.ReplyMarkup = buildMainMenu(s)
+	bot.Send(reply)
+}
+
+func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n"+
+		"/start — меню\n"+
+		"/help — помощь\n"+
+		"/periods — список всех сохранённых периодов\n"+
+		"/upload_report — загрузить JSON-файл\n"+
+		"/setdate — установить дату расчета\n"+
+		"/reset — сброс данных\n"+
+		"/undo — отменить последнее изменение"))
+}
+
+func handleResetCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	if isEmpty(s) {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		return
+	}
+	s.Data = Data{}
+	s.Backup = Data{}
+	_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
+	saveSession(s)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
+}
+
+func handleUndoCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	if isEmpty(s) {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		return
+	}
+	response := undoSession(s)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
+}
+
+func handleSetDateCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	if isEmpty(s) {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		return
+	}
+	s.PendingAction = "awaiting_date"
+	saveSession(s)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ"))
+}
+
+func handleUploadCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.Data.Current = "upload_pending"
+	saveSession(s)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте JSON-файл как документ."))
+}
+
+func handlePeriodsCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	if isEmpty(s) {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		return
+	}
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, buildPeriodsList(s)))
 }
 
 func handleDateInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
