@@ -334,6 +334,7 @@ func handleAwaitingAddCountry(msg *tgbotapi.Message, s *Session, bot *tgbotapi.B
 }
 
 func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("🪵 Текущий индекс редактирования: %d", s.EditingIndex)))
 	newDate, err := parseDate(msg.Text)
 	if err != nil {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
