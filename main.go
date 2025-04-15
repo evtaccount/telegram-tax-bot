@@ -380,7 +380,7 @@ func main() {
 					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
 					return
 				}
-				s.Temp = append(s.Temp[:0], Period{In: date.Format("02.01.2006")})
+				s.Temp = []Period{{In: date.Format("02.01.2006")}}
 				s.PendingAction = "awaiting_add_out"
 				saveSession(s)
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.ММ.ГГГГ):"))
