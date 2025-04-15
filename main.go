@@ -368,35 +368,67 @@ func main() {
 
 		switch {
 		case strings.HasPrefix(text, "/start"):
-			buttons := tgbotapi.NewInlineKeyboardMarkup(
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("📊 Отчет", "show_report"),
-					tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_file"),
-				),
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("📅 Задать дату", "set_date"),
-					tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", "reset"),
-				),
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("📅 Показать текущие данные", "periods"),
-					tgbotapi.NewInlineKeyboardButtonData("ℹ Помощь", "help"),
-				),
-			)
+			if len(s.Data.Periods) == 0 {
+				buttons := tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_file"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help"),
+					),
+				)
+				msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
+				msg.ReplyMarkup = buttons
+				bot.Send(msg)
+			} else {
+				buttons := tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📋 Показать текущие данные", "periods"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📅 Задать дату", "set_date"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📊 Отчет", "show_report"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_report"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", "reset"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help"),
+					),
+				)
 
-			msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
-			msg.ReplyMarkup = buttons
-			bot.Send(msg)
+				msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
+				msg.ReplyMarkup = buttons
+				bot.Send(msg)
+			}
 		case strings.HasPrefix(text, "/help"):
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/periods — список всех сохранённых периодов\n/upload_report — загрузить JSON файл\n/setdate ДД.ММ.ГГГГ — установить дату расчета\n/reset — сброс данных\n/undo — отменить последнее изменение"))
 		case strings.HasPrefix(text, "/reset"):
+			if len(s.Data.Periods) != 0 {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+				continue
+			}
 			s.Data = Data{}
 			s.Backup = Data{}
 			saveSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
 		case strings.HasPrefix(text, "/undo"):
+			if len(s.Data.Periods) != 0 {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+				continue
+			}
 			response := undoSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
 		case strings.HasPrefix(text, "/setdate"):
+			if len(s.Data.Periods) != 0 {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+				continue
+			}
 			s.PendingAction = "awaiting_date"
 			saveSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ"))
