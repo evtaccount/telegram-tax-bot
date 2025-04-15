@@ -198,7 +198,10 @@ func loadUserData(s *Session) {
 	b, err := os.ReadFile(path)
 
 	if err == nil {
-		_ = json.Unmarshal(b, s)
+		var restored Session
+		if err := json.Unmarshal(b, &restored); err == nil {
+			*s = restored
+		}
 	}
 }
 
