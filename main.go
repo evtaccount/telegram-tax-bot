@@ -432,7 +432,9 @@ func handleAwaitingEditIndex(msg *tgbotapi.Message, s *Session, bot *tgbotapi.Bo
 		),
 	)
 	msgText := fmt.Sprintf("Период %d выбран. Что изменить?", index)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, msgText).WithReplyMarkup(buttons))
+	msgToSend := tgbotapi.NewMessage(msg.Chat.ID, msgText)
+	msgToSend.ReplyMarkup = buttons
+	bot.Send(msgToSend)
 }
 
 func main() {
