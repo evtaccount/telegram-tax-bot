@@ -557,6 +557,13 @@ func main() {
 					saveSession(s)
 					bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите номер периода, который хотите отредактировать:"))
 				}
+			case "adjust_prev_out":
+				newIn, _ := parseDate(s.TempDate)
+				s.Data.Periods[s.EditingIndex-1].Out = newIn.Format("02.01.2006")
+				s.Data.Periods[s.EditingIndex].In = newIn.Format("02.01.2006")
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
 			case "edit_in":
 				s.PendingAction = "awaiting_new_in"
 				saveSession(s)
