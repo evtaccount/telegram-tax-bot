@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ type Session struct {
 	Data          Data
 	Backup        Data
 	HistoryDir    string
+	EditingIndex  int
 	PendingAction string
 }
 
@@ -299,7 +301,7 @@ func main() {
 
 	for update := range updates {
 
-		// Обработка нажатий на inline-кнопки
+		// === 📌 Обработка callback кнопок ===
 		if update.CallbackQuery != nil {
 			callback := update.CallbackQuery
 			userID := callback.From.ID
@@ -323,6 +325,26 @@ func main() {
 			case "show_report":
 				report := buildReport(s.Data)
 				bot.Send(tgbotapi.NewMessage(chatID, report))
+			case "edit_period":
+				if isEmpty(s) {
+					bot.Send(tgbotapi.NewMessage(chatID, "📭 Нет сохранённых периодов для редактирования."))
+				} else {
+					s.PendingAction = "awaiting_edit_index"
+					saveSession(s)
+					bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите номер периода, который хотите отредактировать:"))
+				}
+			case "edit_in":
+				s.PendingAction = "awaiting_new_in"
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите новую дату въезда (ДД.ММ.ГГГГ):"))
+			case "edit_out":
+				s.PendingAction = "awaiting_new_out"
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите новую дату выезда (ДД.ММ.ГГГГ):"))
+			case "edit_country":
+				s.PendingAction = "awaiting_new_country"
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "🌍 Введите новое название страны:"))
 			default:
 				bot.Send(tgbotapi.NewMessage(chatID, "❓ Неизвестная кнопка."))
 			}
@@ -338,19 +360,79 @@ func main() {
 			s := getSession(userID)
 			text := msg.Text
 
-			// Шаг 1: если ждем дату
+			// ✅ 1. Ожидание даты
 			if s.PendingAction == "awaiting_date" {
 				handleDateInput(msg, s, bot)
 				continue
 			}
 
-			// Шаг 2: если загружаем JSON
+			// ✅ 2. Загрузка JSON-файла
 			if msg.Document != nil && s.Data.Current == "upload_pending" {
 				handleInputFile(msg, s, bot)
 				continue
 			}
 
-			// Шаг 3: команды
+			// ✅ 3. Ожидаем номер редактируемого периода
+			if s.PendingAction == "awaiting_edit_index" {
+				index, err := strconv.Atoi(strings.TrimSpace(text))
+				if err != nil || index < 1 || index > len(s.Data.Periods) {
+					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Введите корректный номер периода."))
+					continue
+				}
+				s.EditingIndex = index - 1
+				s.PendingAction = "awaiting_edit_field"
+				saveSession(s)
+
+				buttons := tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📅 Изменить дату въезда (in)", "edit_in")),
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📆 Изменить дату выезда (out)", "edit_out")),
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🌍 Изменить страну", "edit_country")),
+				)
+				msg := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("Период %d выбран. Что изменить?", index))
+				msg.ReplyMarkup = buttons
+				bot.Send(msg)
+
+				continue
+			}
+
+			// ✅ 4. Изменяем дату in
+			if s.PendingAction == "awaiting_new_in" {
+				newDate, err := parseDate(text)
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
+					continue
+				}
+				s.Data.Periods[s.EditingIndex].In = newDate.Format("02.01.2006")
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
+				continue
+			}
+
+			// ✅ 5. Изменяем дату out
+			if s.PendingAction == "awaiting_new_out" {
+				newDate, err := parseDate(text)
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
+					continue
+				}
+				s.Data.Periods[s.EditingIndex].Out = newDate.Format("02.01.2006")
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена."))
+				continue
+			}
+
+			// ✅ 6. Изменяем страну
+			if s.PendingAction == "awaiting_new_country" {
+				s.Data.Periods[s.EditingIndex].Country = strings.TrimSpace(text)
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Страна обновлена."))
+				continue
+			}
+
+			// ✅ 7. Команды
 			switch {
 			case strings.HasPrefix(text, "/start"):
 				handleStartCommand(s, msg, bot)
@@ -430,7 +512,16 @@ func handlePeriodsCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAP
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
 		return
 	}
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, buildPeriodsList(s)))
+	msgText := buildPeriodsList(s)
+	newMsg := tgbotapi.NewMessage(msg.Chat.ID, msgText)
+	newMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Отредактировать период", "edit_period"),
+			tgbotapi.NewInlineKeyboardButtonData("➕ Добавить период", "add_period"),
+			tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить период", "delete_period"),
+		),
+	)
+	bot.Send(newMsg)
 }
 
 func handleDateInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
