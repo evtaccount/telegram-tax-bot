@@ -265,7 +265,9 @@ func buildReport(data Data) string {
 	builder := strings.Builder{}
 	builder.WriteString(fmt.Sprintf("Анализ за период: %s — %s\n\n", formatDate(oneYearAgo), formatDate(calcDate)))
 	for _, s := range stats {
-		builder.WriteString(fmt.Sprintf("%s: %d дней\n", s.Country, s.Days))
+		iso := countryCodeMap[s.Country]
+		flag := countryToFlag(iso)
+		builder.WriteString(fmt.Sprintf("%s %s: %d дней\n", flag, s.Country, s.Days))
 	}
 	builder.WriteString("\n")
 	if stats[0].Days >= 183 {
