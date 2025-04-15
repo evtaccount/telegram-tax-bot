@@ -7,9 +7,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -280,15 +278,35 @@ func buildReport(data Data) string {
 	return builder.String()
 }
 
+func handleSetDateCommand(message *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	text := strings.TrimSpace(strings.TrimPrefix(message.Text, "/setdate"))
+	if text == "" {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "Укажите дату в формате ДД.ММ.ГГГГ, например: /setdate 15.04.2025")
+		bot.Send(msg)
+		return
+	}
+	parsed, err := parseDate(text)
+	if err != nil {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ")
+		bot.Send(msg)
+		return
+	}
+	s.Data.Current = parsed.Format("02.01.2006")
+	saveSession(s)
+	msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s", s.Data.Current))
+	bot.Send(msg)
+}
+
 func main() {
 	bot, err := tgbotapi.NewBotAPI(getBotToken())
 	if err != nil {
 		log.Panic(err)
 	}
-	log.Printf("Запущен бот: %s", bot.Self.UserName)
+	log.Printf("🟢 Бот запущен как @%s", bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
+
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
@@ -296,78 +314,59 @@ func main() {
 			continue
 		}
 		msg := update.Message
-		uid := msg.Chat.ID
-
-		if _, ok := sessions[uid]; !ok {
-			sessions[uid] = &Session{UserID: uid, HistoryDir: ensureDirs(uid)}
+		userID := msg.From.ID
+		s, ok := sessions[userID]
+		if !ok {
+			s = &Session{UserID: userID}
+			s.HistoryDir = ensureDirs(userID)
+			loadUserData(s)
+			sessions[userID] = s
 		}
-		s := sessions[uid]
 
+		text := msg.Text
 		switch {
-		case msg.IsCommand():
-			switch msg.Command() {
-			case "start":
-				bot.Send(tgbotapi.NewMessage(uid, "👋 Пришли JSON-файл или команду /help"))
-			case "help":
-				bot.Send(tgbotapi.NewMessage(uid, "📘 Команды:\n/start — начать\n/help — справка\n/reset — сброс\n/undo — откат\nДобавляй периоды: 'добавить период 01.01.2024 - 10.01.2024 Грузия'\nРедактируй: 'изменить период 2 in 05.01.2024 out 15.01.2024 страна Турция'"))
-			case "reset":
-				s.Data = Data{}
-				bot.Send(tgbotapi.NewMessage(uid, "🔄 Данные сброшены."))
-			case "undo":
-				resp := undoSession(s)
-				bot.Send(tgbotapi.NewMessage(uid, resp))
-			}
-
-		case msg.Document != nil:
-			file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: msg.Document.FileID})
-			url := file.Link(bot.Token)
-			resp, err := http.Get(url)
-
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(uid, "❌ Ошибка загрузки файла"))
-				continue
-			}
-
-			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(uid, "❌ Ошибка чтения файла"))
-				continue
-			}
-
-			if err := json.Unmarshal(body, &s.Data); err != nil {
-				bot.Send(tgbotapi.NewMessage(uid, "❌ Ошибка чтения JSON"))
-				continue
-			}
-
-			backupSession(s)
+		case strings.HasPrefix(text, "/start"):
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Отправьте JSON с периодами или используйте /help"))
+		case strings.HasPrefix(text, "/help"):
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/reset — сброс данных\n/undo — отменить последнее изменение\n/setdate ДД.ММ.ГГГГ — установить дату расчета"))
+		case strings.HasPrefix(text, "/reset"):
+			s.Data = Data{}
+			s.Backup = Data{}
 			saveSession(s)
-
-			report := buildReport(s.Data)
-			sendReport(bot, uid, report)
-
-		case strings.HasPrefix(strings.ToLower(msg.Text), "добавить период"):
-			parts := strings.Split(msg.Text, " ")
-			if len(parts) >= 5 {
-				p := Period{In: parts[2], Out: parts[4], Country: strings.Join(parts[5:], " ")}
-				s.Backup = s.Data
-				s.Data.Periods = append(s.Data.Periods, p)
-				saveSession(s)
-				report := buildReport(s.Data)
-				sendReport(bot, uid, report)
-			} else {
-				bot.Send(tgbotapi.NewMessage(uid, "⚠️ Формат: добавить период 01.01.2024 - 10.01.2024 Грузия"))
-			}
-
-		case strings.HasPrefix(strings.ToLower(msg.Text), "изменить период"):
-			// Добавить парсинг номера периода, обновление и подтверждение — по желанию
-			bot.Send(tgbotapi.NewMessage(uid, "✏️ Функция редактирования скоро будет полностью доступна!"))
-
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
+		case strings.HasPrefix(text, "/undo"):
+			response := undoSession(s)
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
+		case strings.HasPrefix(text, "/setdate"):
+			handleSetDateCommand(msg, s, bot)
 		default:
-			bot.Send(tgbotapi.NewMessage(uid, "🤖 Я не понял. Напиши /help или пришли JSON."))
+			if strings.HasPrefix(text, "{") {
+				handleJSONInput(msg, s, bot)
+			} else {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help для списка."))
+			}
 		}
 	}
+}
+
+func loadUserData(s *Session) {
+	path := fmt.Sprintf("%s/data.json", s.HistoryDir)
+	b, err := os.ReadFile(path)
+	if err == nil {
+		_ = json.Unmarshal(b, &s.Data)
+	}
+}
+
+func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	backupSession(s)
+	err := json.Unmarshal([]byte(msg.Text), &s.Data)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON"))
+		return
+	}
+	saveSession(s)
+	report := buildReport(s.Data)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, report))
 }
 
 func sendReport(bot *tgbotapi.BotAPI, chatID int64, report string) {
