@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -285,8 +286,8 @@ func handleSetDateCommand(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAP
 	}
 	s.Data.Current = parsed.Format("02.01.2006")
 	saveSession(s)
-	msg := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s", s.Data.Current))
-	bot.Send(msg)
+	response := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s", s.Data.Current))
+	bot.Send(response)
 }
 
 func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
@@ -343,13 +344,13 @@ func main() {
 			fileID := msg.Document.FileID
 			file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
 			url := file.Link(bot.Token)
-			resp, err := bot.Client.Get(url)
+			resp, err := http.Get(url)
 			if err != nil {
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл"))
 				continue
 			}
-			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
 			msg.Text = string(body)
 			handleJSONInput(msg, s, bot)
 			continue
