@@ -188,22 +188,39 @@ func backupSession(s *Session) {
 }
 
 func saveSession(s *Session) {
-	b, _ := json.MarshalIndent(s, "", "  ")
-	_ = os.WriteFile(fmt.Sprintf("%s/session.json", s.HistoryDir), b, 0644)
-	t := time.Now().Format("2006-01-02_15-04-05")
-	_ = os.WriteFile(fmt.Sprintf("%s/report_%s.txt", s.HistoryDir, t), []byte(buildReport(s.Data)), 0644)
+	sessionPath := fmt.Sprintf("%s/session.json", s.HistoryDir)
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		log.Printf("Ошибка сериализации сессии: %v", err)
+		return
+	}
+	err = os.WriteFile(sessionPath, data, 0644)
+	if err != nil {
+		log.Printf("Ошибка записи сессии: %v", err)
+	}
 }
 
-func loadUserData(s *Session) {
-	path := fmt.Sprintf("%s/session.json", s.HistoryDir)
-	b, err := os.ReadFile(path)
+func loadSession(userID int64) *Session {
+	historyDir := ensureDirs(userID)
+	sessionPath := fmt.Sprintf("%s/session.json", historyDir)
 
-	if err == nil {
-		var restored Session
-		if err := json.Unmarshal(b, &restored); err == nil {
-			*s = restored
-		}
+	var s Session
+	s.UserID = userID
+	s.HistoryDir = historyDir
+
+	if data, err := os.ReadFile(sessionPath); err == nil {
+		_ = json.Unmarshal(data, &s)
 	}
+	return &s
+}
+
+func getSession(userID int64) *Session {
+	s, ok := sessions[userID]
+	if !ok {
+		s := loadSession(userID)
+		sessions[userID] = s
+	}
+	return s
 }
 
 func buildReport(data Data) string {
@@ -450,7 +467,6 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 				markup := tgbotapi.NewInlineKeyboardMarkup(
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
 				)
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
@@ -469,7 +485,6 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 				markup := tgbotapi.NewInlineKeyboardMarkup(
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
 				)
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
@@ -526,7 +541,6 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAP
 				markup := tgbotapi.NewInlineKeyboardMarkup(
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть следующий период", "adjust_next_in")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
 				)
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
@@ -544,7 +558,6 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAP
 				markup := tgbotapi.NewInlineKeyboardMarkup(
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть следующий период", "adjust_next_in")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap")),
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
 				)
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
@@ -655,25 +668,6 @@ func handleKeepConflict(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI)
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
 }
 
-func handleSkipGap(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
-	if s.PendingAction == "confirm_gap_in" {
-		s.Data.Periods[s.EditingIndex].In = s.TempEditedIn
-		s.PendingAction = ""
-		saveSession(s)
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена (с зазором)."))
-	} else if s.PendingAction == "confirm_gap_out" {
-		s.Data.Periods[s.EditingIndex].Out = s.TempEditedIn
-		s.PendingAction = ""
-		saveSession(s)
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена (с зазором)."))
-	} else {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Нет ожидаемого зазора."))
-		return
-	}
-
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
-}
-
 func handleAdjustNextIn(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	index := s.EditingIndex
 	if index+1 >= len(s.Data.Periods) {
@@ -748,8 +742,6 @@ func main() {
 				handleAdjustNextIn(s, callback.Message, bot)
 			case "keep_conflict":
 				handleKeepConflict(callback.Message, s, bot)
-			case "skip_gap":
-				handleSkipGap(callback.Message, s, bot)
 			case "cancel_edit":
 				handleCancelEdit(s, callback.Message, bot)
 			case "show_report":
@@ -932,17 +924,6 @@ func handlePeriodsCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAP
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить период", "delete_period")),
 	)
 	bot.Send(newMsg)
-}
-
-func getSession(userID int64) *Session {
-	s, ok := sessions[userID]
-	if !ok {
-		s = &Session{UserID: userID}
-		s.HistoryDir = ensureDirs(userID)
-		loadUserData(s)
-		sessions[userID] = s
-	}
-	return s
 }
 
 func isEmpty(s *Session) bool {
