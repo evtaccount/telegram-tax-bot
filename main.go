@@ -1,7 +1,3 @@
-// main.go
-// Telegram бот для расчета налогового резидентства
-// Поддержка: /start, /help, /reset, /undo, добавление/редактирование периодов, Docker secret/env, история, inline-кнопки
-
 package main
 
 import (
@@ -147,7 +143,6 @@ func ensureDirs(userID int64) string {
 }
 
 func getBotToken() string {
-	// 1. Пробуем считать из Docker Secret (если запускается в Swarm или через файл)
 	if data, err := os.ReadFile("/run/secrets/telegram_bot_token"); err == nil {
 		token := strings.TrimSpace(string(data))
 		if token != "" {
@@ -155,15 +150,11 @@ func getBotToken() string {
 			return token
 		}
 	}
-
-	// 2. Пробуем из переменной окружения
 	token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
 	if token != "" {
 		log.Println("✅ Токен получен из переменной окружения (TELEGRAM_BOT_TOKEN)")
 		return token
 	}
-
-	// 3. Если ничего не найдено — критическая ошибка
 	log.Fatal("❌ Токен не найден: отсутствует и Docker Secret, и переменная окружения")
 	return ""
 }
@@ -279,23 +270,46 @@ func buildReport(data Data) string {
 	return builder.String()
 }
 
-func handleSetDateCommand(message *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
-	text := strings.TrimSpace(strings.TrimPrefix(message.Text, "/setdate"))
+func handleSetDateCommand(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	text := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/setdate"))
 	if text == "" {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Укажите дату в формате ДД.ММ.ГГГГ, например: /setdate 15.04.2025")
+		msg := tgbotapi.NewMessage(msg.Chat.ID, "Укажите дату в формате ДД.ММ.ГГГГ, например: /setdate 15.04.2025")
 		bot.Send(msg)
 		return
 	}
 	parsed, err := parseDate(text)
 	if err != nil {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ")
+		msg := tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ")
 		bot.Send(msg)
 		return
 	}
 	s.Data.Current = parsed.Format("02.01.2006")
 	saveSession(s)
-	msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s", s.Data.Current))
+	msg := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s", s.Data.Current))
 	bot.Send(msg)
+}
+
+func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	backupSession(s)
+	err := json.Unmarshal([]byte(msg.Text), &s.Data)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON"))
+		return
+	}
+	if s.Data.Current == "" {
+		s.Data.Current = time.Now().Format("02.01.2006")
+	}
+	saveSession(s)
+	report := buildReport(s.Data)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, report))
+}
+
+func loadUserData(s *Session) {
+	path := fmt.Sprintf("%s/data.json", s.HistoryDir)
+	b, err := os.ReadFile(path)
+	if err == nil {
+		_ = json.Unmarshal(b, &s.Data)
+	}
 }
 
 func main() {
@@ -324,6 +338,7 @@ func main() {
 			sessions[userID] = s
 		}
 
+		// 📦 Если файл
 		if msg.Document != nil {
 			fileID := msg.Document.FileID
 			file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
@@ -340,6 +355,7 @@ func main() {
 			continue
 		}
 
+		text := msg.Text
 		switch {
 		case strings.HasPrefix(text, "/start"):
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Отправьте JSON с периодами или используйте /help"))
@@ -363,38 +379,4 @@ func main() {
 			}
 		}
 	}
-}
-
-func loadUserData(s *Session) {
-	path := fmt.Sprintf("%s/data.json", s.HistoryDir)
-	b, err := os.ReadFile(path)
-	if err == nil {
-		_ = json.Unmarshal(b, &s.Data)
-	}
-}
-
-func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
-	backupSession(s)
-	err := json.Unmarshal([]byte(msg.Text), &s.Data)
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON"))
-		return
-	}
-	if s.Data.Current == "" {
-		s.Data.Current = time.Now().Format("02.01.2006")
-	}
-	saveSession(s)
-	report := buildReport(s.Data)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, report))
-}
-
-func sendReport(bot *tgbotapi.BotAPI, chatID int64, report string) {
-	msg := tgbotapi.NewMessage(chatID, report)
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Повторить расчёт", "repeat"),
-			tgbotapi.NewInlineKeyboardButtonData("Сбросить данные", "reset"),
-		),
-	)
-	bot.Send(msg)
 }
