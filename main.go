@@ -364,6 +364,9 @@ func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON"))
 		return
 	}
+	if s.Data.Current == "" {
+		s.Data.Current = time.Now().Format("02.01.2006")
+	}
 	saveSession(s)
 	report := buildReport(s.Data)
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, report))
