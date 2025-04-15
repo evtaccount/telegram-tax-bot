@@ -188,39 +188,22 @@ func backupSession(s *Session) {
 }
 
 func saveSession(s *Session) {
-	sessionPath := fmt.Sprintf("%s/session.json", s.HistoryDir)
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		log.Printf("Ошибка сериализации сессии: %v", err)
-		return
-	}
-	err = os.WriteFile(sessionPath, data, 0644)
-	if err != nil {
-		log.Printf("Ошибка записи сессии: %v", err)
-	}
+	b, _ := json.MarshalIndent(s, "", "  ")
+	_ = os.WriteFile(fmt.Sprintf("%s/session.json", s.HistoryDir), b, 0644)
+	t := time.Now().Format("2006-01-02_15-04-05")
+	_ = os.WriteFile(fmt.Sprintf("%s/report_%s.txt", s.HistoryDir, t), []byte(buildReport(s.Data)), 0644)
 }
 
-func loadSession(userID int64) *Session {
-	historyDir := ensureDirs(userID)
-	sessionPath := fmt.Sprintf("%s/session.json", historyDir)
+func loadUserData(s *Session) {
+	path := fmt.Sprintf("%s/session.json", s.HistoryDir)
+	b, err := os.ReadFile(path)
 
-	var s Session
-	s.UserID = userID
-	s.HistoryDir = historyDir
-
-	if data, err := os.ReadFile(sessionPath); err == nil {
-		_ = json.Unmarshal(data, &s)
+	if err == nil {
+		var restored Session
+		if err := json.Unmarshal(b, &restored); err == nil {
+			*s = restored
+		}
 	}
-	return &s
-}
-
-func getSession(userID int64) *Session {
-	s, ok := sessions[userID]
-	if !ok {
-		s := loadSession(userID)
-		sessions[userID] = s
-	}
-	return s
 }
 
 func buildReport(data Data) string {
@@ -924,6 +907,17 @@ func handlePeriodsCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAP
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить период", "delete_period")),
 	)
 	bot.Send(newMsg)
+}
+
+func getSession(userID int64) *Session {
+	s, ok := sessions[userID]
+	if !ok {
+		s = &Session{UserID: userID}
+		s.HistoryDir = ensureDirs(userID)
+		loadUserData(s)
+		sessions[userID] = s
+	}
+	return s
 }
 
 func isEmpty(s *Session) bool {
