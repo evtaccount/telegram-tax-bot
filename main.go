@@ -368,7 +368,24 @@ func main() {
 
 		switch {
 		case strings.HasPrefix(text, "/start"):
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Это бот для расчета налогового резидентства. Используйте /help чтобы посмотреть доступные команды"))
+			buttons := tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("📊 Отчет", "show_report"),
+					tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_file"),
+				),
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("📅 Задать дату", "set_date"),
+					tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", "reset"),
+				),
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("📅 Показать текущие данные", "periods"),
+					tgbotapi.NewInlineKeyboardButtonData("ℹ Помощь", "help"),
+				),
+			)
+
+			msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
+			msg.ReplyMarkup = buttons
+			bot.Send(msg)
 		case strings.HasPrefix(text, "/help"):
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/periods — список всех сохранённых периодов\n/upload_report — загрузить JSON файл\n/setdate ДД.ММ.ГГГГ — установить дату расчета\n/reset — сброс данных\n/undo — отменить последнее изменение"))
 		case strings.HasPrefix(text, "/reset"):
