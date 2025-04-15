@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  tax-bot:
+    build: .
+    container_name: tax-bot
+    environment:
+      - TELEGRAM_BOT_TOKEN=your_bot_token_here
+    volumes:
+      - ./data:/root/data
+      - ./logs:/root/logs
+    restart: always
