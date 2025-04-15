@@ -187,10 +187,19 @@ func backupSession(s *Session) {
 }
 
 func saveSession(s *Session) {
-	b, _ := json.MarshalIndent(s.Data, "", "  ")
-	_ = os.WriteFile(fmt.Sprintf("%s/data.json", s.HistoryDir), b, 0644)
+	b, _ := json.MarshalIndent(s, "", "  ")
+	_ = os.WriteFile(fmt.Sprintf("%s/session.json", s.HistoryDir), b, 0644)
 	t := time.Now().Format("2006-01-02_15-04-05")
 	_ = os.WriteFile(fmt.Sprintf("%s/report_%s.txt", s.HistoryDir, t), []byte(buildReport(s.Data)), 0644)
+}
+
+func loadUserData(s *Session) {
+	path := fmt.Sprintf("%s/session.json", s.HistoryDir)
+	b, err := os.ReadFile(path)
+
+	if err == nil {
+		_ = json.Unmarshal(b, s)
+	}
 }
 
 func buildReport(data Data) string {
@@ -281,14 +290,6 @@ func handleJSONInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, report))
 }
 
-func loadUserData(s *Session) {
-	path := fmt.Sprintf("%s/data.json", s.HistoryDir)
-	b, err := os.ReadFile(path)
-	if err == nil {
-		_ = json.Unmarshal(b, &s.Data)
-	}
-}
-
 func handleAwaitingAddOut(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
 	if len(s.Temp) == 0 {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка. Начните добавление заново."))
@@ -334,7 +335,6 @@ func handleAwaitingAddCountry(msg *tgbotapi.Message, s *Session, bot *tgbotapi.B
 }
 
 func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("🪵 Текущий индекс редактирования: %d", s.EditingIndex)))
 	newDate, err := parseDate(msg.Text)
 	if err != nil {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
@@ -413,10 +413,12 @@ func handleAwaitingDate(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI)
 
 func handleAwaitingEditIndex(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
 	index, err := strconv.Atoi(strings.TrimSpace(msg.Text))
+
 	if err != nil || index < 1 || index > len(s.Data.Periods) {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Введите корректный номер периода."))
 		return
 	}
+
 	s.EditingIndex = index - 1
 	s.PendingAction = "awaiting_edit_field"
 	saveSession(s)
