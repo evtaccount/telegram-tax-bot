@@ -31,10 +31,11 @@ type Data struct {
 }
 
 type Session struct {
-	UserID     int64
-	Data       Data
-	Backup     Data
-	HistoryDir string
+	UserID        int64
+	Data          Data
+	Backup        Data
+	HistoryDir    string
+	PendingAction string
 }
 
 var sessions = map[int64]*Session{}
@@ -341,13 +342,30 @@ func main() {
 			sessions[userID] = s
 		}
 
+		text := msg.Text
+
 		// Обработка JSON-файла (только после команды /upload_report)
 		if msg.Document != nil && s.Data.Current == "upload_pending" {
 			handleInputFile(msg, s, bot)
 			continue
 		}
 
-		text := msg.Text
+		// Если пользователь ожидается ввод даты
+		if s.PendingAction == "awaiting_date" {
+			parsed, err := parseDate(text)
+			if err != nil {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ"))
+				continue
+			}
+			s.Data.Current = parsed.Format("02.01.2006")
+			s.PendingAction = ""
+			saveSession(s)
+			report := buildReport(s.Data)
+			response := fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report)
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
+			continue
+		}
+
 		switch {
 		case strings.HasPrefix(text, "/start"):
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Это бот для расчета налогового резидентства. Используйте /help чтобы посмотреть доступные команды"))
@@ -362,7 +380,9 @@ func main() {
 			response := undoSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
 		case strings.HasPrefix(text, "/setdate"):
-			handleSetDateCommand(msg, s, bot)
+			s.PendingAction = "awaiting_date"
+			saveSession(s)
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ"))
 		case strings.HasPrefix(text, "/upload_report"):
 			s.Data.Current = "upload_pending"
 			saveSession(s)
