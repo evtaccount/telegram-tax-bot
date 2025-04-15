@@ -52,19 +52,20 @@ func ensureDirs(userID int64) string {
 func getBotToken() string {
 	if data, err := os.ReadFile("/run/secrets/telegram_bot_token"); err == nil {
 		token := strings.TrimSpace(string(data))
-
 		if token != "" {
+			log.Println("✅ Токен получен из секрета")
 			return token
 		}
 	}
 
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
-
-	if token == "" {
-		log.Fatal("TELEGRAM_BOT_TOKEN не установлен и /run/secrets/telegram_bot_token не найден")
+	if token != "" {
+		log.Println("✅ Токен получен из переменной окружения")
+		return token
 	}
 
-	return token
+	log.Fatal("❌ TELEGRAM_BOT_TOKEN не установлен и секрет не найден")
+	return ""
 }
 
 func parseDate(dateStr string) (time.Time, error) {
