@@ -7,6 +7,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sort"
@@ -323,7 +324,22 @@ func main() {
 			sessions[userID] = s
 		}
 
-		text := msg.Text
+		if msg.Document != nil {
+			fileID := msg.Document.FileID
+			file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+			url := file.Link(bot.Token)
+			resp, err := bot.Client.Get(url)
+			if err != nil {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл"))
+				continue
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			msg.Text = string(body)
+			handleJSONInput(msg, s, bot)
+			continue
+		}
+
 		switch {
 		case strings.HasPrefix(text, "/start"):
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Отправьте JSON с периодами или используйте /help"))
