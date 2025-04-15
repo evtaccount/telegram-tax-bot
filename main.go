@@ -323,15 +323,16 @@ func main() {
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
-
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
+
 		msg := update.Message
 		userID := msg.From.ID
+
 		s, ok := sessions[userID]
 		if !ok {
 			s = &Session{UserID: userID}
@@ -340,29 +341,18 @@ func main() {
 			sessions[userID] = s
 		}
 
-		// 📦 Если файл
-		if msg.Document != nil {
-			fileID := msg.Document.FileID
-			file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
-			url := file.Link(bot.Token)
-			resp, err := http.Get(url)
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл"))
-				continue
-			}
-			body, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			msg.Text = string(body)
-			handleJSONInput(msg, s, bot)
+		// Обработка JSON-файла (только после команды /upload_report)
+		if msg.Document != nil && s.Data.Current == "upload_pending" {
+			handleInputFile(msg, s, bot)
 			continue
 		}
 
 		text := msg.Text
 		switch {
 		case strings.HasPrefix(text, "/start"):
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Отправьте JSON с периодами или используйте /help"))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Это бот для расчета налогового резидентства. Используйте /help чтобы посмотреть доступные команды"))
 		case strings.HasPrefix(text, "/help"):
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/reset — сброс данных\n/undo — отменить последнее изменение\n/setdate ДД.ММ.ГГГГ — установить дату расчета"))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/upload_report — загрузить JSON файл\n/setdate ДД.ММ.ГГГГ — установить дату расчета\n/reset — сброс данных\n/undo — отменить последнее изменение"))
 		case strings.HasPrefix(text, "/reset"):
 			s.Data = Data{}
 			s.Backup = Data{}
@@ -373,6 +363,10 @@ func main() {
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
 		case strings.HasPrefix(text, "/setdate"):
 			handleSetDateCommand(msg, s, bot)
+		case strings.HasPrefix(text, "/upload_report"):
+			s.Data.Current = "upload_pending"
+			saveSession(s)
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте файл с данными в формате JSON как документ."))
 		default:
 			if strings.HasPrefix(text, "{") {
 				handleJSONInput(msg, s, bot)
@@ -381,4 +375,23 @@ func main() {
 			}
 		}
 	}
+}
+
+func handleInputFile(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	fileID := msg.Document.FileID
+	file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+	url := file.Link(bot.Token)
+	resp, err := http.Get(url)
+
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл"))
+		return
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	msg.Text = string(body)
+	s.Data.Current = "" // сбрасываем флаг после загрузки
+	handleJSONInput(msg, s, bot)
 }
