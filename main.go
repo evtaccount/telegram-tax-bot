@@ -378,12 +378,20 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 				s.TempDate = newDate.Format("02.01.2006")
 				s.PendingAction = "gap_detected"
 
-				row := []tgbotapi.InlineKeyboardButton{
-					tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
-					tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"),
-					tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap"),
-					tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit"),
-				}
+				row := tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit"),
+					),
+				)
 
 				message := tgbotapi.NewMessage(msg.Chat.ID,
 					fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?",
@@ -552,12 +560,20 @@ func main() {
 				s.PendingAction = ""
 				saveSession(s)
 				bot.Send(tgbotapi.NewMessage(chatID, "✅ Дата обновлена. Конфликт проигнорирован."))
-
+				handlePeriodsCommand(s, callback.Message, bot)
+			case "skip_gap":
+				s.Data.Periods[s.EditingIndex].In = s.TempDate
+				s.PendingAction = ""
+				s.TempDate = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Период с разрывом сохранён. Он будет учтён как 'unknown' в отчёте."))
+				handlePeriodsCommand(s, callback.Message, bot)
 			case "cancel_edit":
 				s.TempDate = ""
 				s.PendingAction = ""
 				saveSession(s)
 				bot.Send(tgbotapi.NewMessage(chatID, "❌ Изменение отменено."))
+				handlePeriodsCommand(s, callback.Message, bot)
 			case "show_report":
 				report := buildReport(s.Data)
 				bot.Send(tgbotapi.NewMessage(chatID, report))
@@ -589,6 +605,7 @@ func main() {
 				s.TempDate = ""
 				saveSession(s)
 				bot.Send(tgbotapi.NewMessage(chatID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
+				handlePeriodsCommand(s, callback.Message, bot)
 			case "edit_in":
 				s.PendingAction = "awaiting_new_in"
 				saveSession(s)
