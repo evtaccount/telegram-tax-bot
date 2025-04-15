@@ -729,7 +729,9 @@ func main() {
 				handleCancelEdit(s, callback.Message, bot)
 			case "show_report":
 				report := buildReport(s.Data)
-				bot.Send(tgbotapi.NewMessage(chatID, report))
+				msg := tgbotapi.NewMessage(chatID, report)
+				msg.ReplyMarkup = buildBackToMenu()
+				bot.Send(msg)
 			case "add_period":
 				s.PendingAction = "awaiting_add_in"
 				saveSession(s)
@@ -862,7 +864,9 @@ func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 
 💬 Используйте /start для возврата в главное меню.`
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, helpText))
+	newMsg := tgbotapi.NewMessage(msg.Chat.ID, helpText)
+	newMsg.ReplyMarkup = buildBackToMenu()
+	bot.Send(newMsg)
 }
 
 func handleResetCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -875,7 +879,10 @@ func handleResetCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI)
 	s.Temp = nil
 	_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
 	saveSession(s)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
+
+	newMsg := tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены.")
+	newMsg.ReplyMarkup = buildBackToMenu()
+	bot.Send(newMsg)
 }
 
 func handleSetDateCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -891,7 +898,10 @@ func handleSetDateCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAP
 func handleUploadCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	s.Data.Current = "upload_pending"
 	saveSession(s)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте JSON-файл как документ."))
+
+	newMsg := tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте JSON-файл как документ.")
+	newMsg.ReplyMarkup = buildBackToMenu()
+	bot.Send(newMsg)
 }
 
 func handlePeriodsCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -924,6 +934,14 @@ func getSession(userID int64) *Session {
 
 func isEmpty(s *Session) bool {
 	return len(s.Data.Periods) == 0
+}
+
+func buildBackToMenu() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "start"),
+		),
+	)
 }
 
 func buildMainMenu(s *Session) tgbotapi.InlineKeyboardMarkup {
