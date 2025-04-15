@@ -370,7 +370,7 @@ func main() {
 		case strings.HasPrefix(text, "/start"):
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "👋 Привет! Это бот для расчета налогового резидентства. Используйте /help чтобы посмотреть доступные команды"))
 		case strings.HasPrefix(text, "/help"):
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/upload_report — загрузить JSON файл\n/setdate ДД.ММ.ГГГГ — установить дату расчета\n/reset — сброс данных\n/undo — отменить последнее изменение"))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/periods — список всех сохранённых периодов\n/upload_report — загрузить JSON файл\n/setdate ДД.ММ.ГГГГ — установить дату расчета\n/reset — сброс данных\n/undo — отменить последнее изменение"))
 		case strings.HasPrefix(text, "/reset"):
 			s.Data = Data{}
 			s.Backup = Data{}
@@ -387,6 +387,25 @@ func main() {
 			s.Data.Current = "upload_pending"
 			saveSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте файл с данными в формате JSON как документ."))
+		case strings.HasPrefix(text, "/periods"):
+			if len(s.Data.Periods) == 0 {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+				continue
+			}
+			builder := strings.Builder{}
+			builder.WriteString("📋 Список периодов:\n\n")
+			for i, p := range s.Data.Periods {
+				in := p.In
+				if in == "" {
+					in = "—"
+				}
+				out := p.Out
+				if out == "" {
+					out = "по " + s.Data.Current
+				}
+				builder.WriteString(fmt.Sprintf("%d. %s — %s (%s)\n", i+1, in, out, p.Country))
+			}
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, builder.String()))
 		default:
 			if strings.HasPrefix(text, "{") {
 				handleJSONInput(msg, s, bot)
