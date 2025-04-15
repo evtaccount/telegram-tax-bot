@@ -31,15 +31,15 @@ type Data struct {
 	Current string   `json:"current"`
 }
 type Session struct {
-	UserID        int64    `json:"user_id"`
-	Data          Data     `json:"data"`
-	Backup        Data     `json:"backup"`
-	HistoryDir    string   `json:"history_dir"`
-	Temp          []Period `json:"temp"`
-	EditingIndex  int      `json:"editing_index"`
-	PendingAction string   `json:"pending_action"`
-	TempEditedIn  string   `json:"temp_edited_in"`
-	TempEditedOut string   `json:"temp_edited_out"`
+	UserID        int64
+	Data          Data
+	Backup        Data
+	HistoryDir    string
+	Temp          []Period
+	EditingIndex  int
+	PendingAction string
+	TempEditedIn  string
+	TempEditedOut string
 }
 
 var sessions = map[int64]*Session{}
