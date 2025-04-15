@@ -219,6 +219,7 @@ func buildReport(data Data) string {
 		} else {
 			outDate = calcDate
 		}
+
 		if i == 0 && period.In == "" {
 			inDate = oneYearAgo
 			if outDate.Before(oneYearAgo) {
@@ -227,10 +228,34 @@ func buildReport(data Data) string {
 		} else {
 			inDate, _ = parseDate(period.In)
 		}
+
+		// проверка хронологии
 		if i > 0 && inDate.Before(previousOutDate) {
 			return fmt.Sprintf("Ошибка: периоды не в хронологическом порядке (период %d)", i+1)
 		}
+
+		// обработка разрыва между предыдущим и текущим
+		if i > 0 && !previousOutDate.IsZero() {
+			gapStart := previousOutDate.AddDate(0, 0, 1)
+			if gapStart.Before(inDate) {
+				gapEnd := inDate.AddDate(0, 0, -1)
+				// обрезаем до окна
+				if gapEnd.After(calcDate) {
+					gapEnd = calcDate
+				}
+				if gapStart.Before(oneYearAgo) {
+					gapStart = oneYearAgo
+				}
+				if !gapStart.After(gapEnd) {
+					days := int(gapEnd.Sub(gapStart).Hours()/24) + 1
+					countryDays["unknown"] += days
+				}
+			}
+		}
+
 		previousOutDate = outDate
+
+		// обрезка до окна
 		if outDate.Before(oneYearAgo) {
 			continue
 		}
@@ -243,13 +268,16 @@ func buildReport(data Data) string {
 		if inDate.After(outDate) {
 			continue
 		}
+
 		effectiveOutDate := outDate.AddDate(0, 0, 1)
 		days := int(effectiveOutDate.Sub(inDate).Hours() / 24)
 		countryDays[period.Country] += days
 	}
+
 	if len(countryDays) == 0 {
 		return "Нет данных для анализа за указанный период."
 	}
+
 	type stat struct {
 		Country string
 		Days    int
@@ -261,21 +289,33 @@ func buildReport(data Data) string {
 	sort.Slice(stats, func(i, j int) bool {
 		return stats[i].Days > stats[j].Days
 	})
+
 	builder := strings.Builder{}
 	builder.WriteString(fmt.Sprintf("Анализ за период: %s — %s\n\n", formatDate(oneYearAgo), formatDate(calcDate)))
 	for _, s := range stats {
+		if s.Country == "unknown" {
+			builder.WriteString(fmt.Sprintf("🕳 Неизвестно где: %d дней\n", s.Days))
+			continue
+		}
 		iso := countryCodeMap[s.Country]
 		flag := countryToFlag(iso)
 		builder.WriteString(fmt.Sprintf("%s %s: %d дней\n", flag, s.Country, s.Days))
 	}
+
 	builder.WriteString("\n")
-	if stats[0].Days >= 183 {
+	if stats[0].Country != "unknown" && stats[0].Days >= 183 {
 		iso := countryCodeMap[stats[0].Country]
 		flag := countryToFlag(iso)
-		builder.WriteString(fmt.Sprintf("%s %s: %d дней\n", flag, stats[0].Country, stats[0].Days))
+		builder.WriteString(fmt.Sprintf("✅ Налоговый резидент: %s %s (%d дней)\n", flag, stats[0].Country, stats[0].Days))
 	} else {
-		builder.WriteString(fmt.Sprintf("Нет страны с >=183 днями. Больше всего в: %s (%d дней)", stats[0].Country, stats[0].Days))
+		for _, s := range stats {
+			if s.Country != "unknown" {
+				builder.WriteString(fmt.Sprintf("⚠️ Нет страны с >=183 днями. Больше всего в: %s (%d дней)\n", s.Country, s.Days))
+				break
+			}
+		}
 	}
+
 	return builder.String()
 }
 
@@ -345,71 +385,111 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 		return
 	}
 
-	if s.EditingIndex > 0 {
-		prevOut := s.Data.Periods[s.EditingIndex-1].Out
-		if prevOut != "" {
-			prevOutDate, _ := parseDate(prevOut)
+	currentPeriod := &s.Data.Periods[s.EditingIndex]
+	prevPeriod := &s.Data.Periods[s.EditingIndex-1]
 
-			if newDate.Before(prevOutDate) {
-				// ⛔ Конфликт: новая дата раньше предыдущего out
-				s.TempDate = newDate.Format("02.01.2006")
+	// 1. Ничего не изменилось
+	if currentPeriod.In == newDate.Format("02.01.2006") {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Дата осталась без изменений."))
+		handlePeriodsCommand(s, msg, bot)
+		return
+	}
+
+	// 2. Разницы нет — даты стыкуются (например: предыдущий out = 01.01.2024, новая in = 01.01.2024 или 02.01.2024)
+	if prevPeriod.Out != "" {
+		prevOut, err := parseDate(prevPeriod.Out)
+		if err == nil {
+			diff := int(newDate.Sub(prevOut).Hours() / 24)
+
+			// 2.1 Если даты стыкуются
+			if diff == 0 || diff == 1 {
+				currentPeriod.In = newDate.Format("02.01.2006")
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
+				handlePeriodsCommand(s, msg, bot)
+				return
+			}
+
+			// 3. Если новая in раньше предыдущего out — конфликт
+			if diff < 0 {
 				s.PendingAction = "conflict_prev_out"
+				s.TempDate = newDate.Format("02.01.2006")
 
-				row := []tgbotapi.InlineKeyboardButton{
-					tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
-				}
-				if prevOutDate.AddDate(0, 0, 1).Equal(newDate) {
-					row = append(row, tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"))
-				}
-				row = append(row,
-					tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap"),
-					tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit"),
+				buttons := tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out")),
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
 				)
 
-				msg := tgbotapi.NewMessage(msg.Chat.ID, "🕓 Новая дата въезда раньше окончания предыдущего периода. Что сделать?")
-				msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(row...))
+				msg := tgbotapi.NewMessage(msg.Chat.ID, "⛔ Новая дата въезда раньше даты выезда предыдущего периода. Что сделать?")
+				msg.ReplyMarkup = buttons
 				bot.Send(msg)
 				saveSession(s)
 				return
 			}
 
-			// 💡 Проверяем зазор между предыдущим out и новым in
-			if newDate.After(prevOutDate.AddDate(0, 0, 1)) {
-				s.TempDate = newDate.Format("02.01.2006")
+			// 4. Если зазор больше 1 дня — предложить 3 действия
+			if diff > 1 {
 				s.PendingAction = "gap_detected"
+				s.TempDate = newDate.Format("02.01.2006")
 
-				row := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit"),
-					),
+				buttons := tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out")),
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➕ Добавить период", "add_gap_period")),
+					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
 				)
 
-				message := tgbotapi.NewMessage(msg.Chat.ID,
-					fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?",
-						prevOutDate.AddDate(0, 0, 1).Format("02.01.2006"),
-						newDate.Format("02.01.2006"),
-					))
-				message.ReplyMarkup = row
-				bot.Send(message)
+				msg := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("⚠️ Между %s и %s образовался разрыв. Что сделать?",
+					prevOut.AddDate(0, 0, 1).Format("02.01.2006"),
+					newDate.Format("02.01.2006"),
+				))
+				msg.ReplyMarkup = buttons
+				bot.Send(msg)
 				saveSession(s)
 				return
 			}
 		}
 	}
 
-	s.Data.Periods[s.EditingIndex].In = newDate.Format("02.01.2006")
+	// ✅ Всё хорошо, обновляем
+	currentPeriod.In = newDate.Format("02.01.2006")
 	s.PendingAction = ""
 	saveSession(s)
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
+	handlePeriodsCommand(s, msg, bot)
+}
+
+func handleAddGapPeriod(s *Session, callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
+	chatID := callback.Message.Chat.ID
+
+	newIn, _ := parseDate(s.TempDate)
+	prev := s.Data.Periods[s.EditingIndex-1]
+
+	prevOut, _ := parseDate(prev.Out)
+	newGapStart := prevOut.AddDate(0, 0, 1)
+	newGapEnd := newIn.AddDate(0, 0, -1)
+
+	newGap := Period{
+		In:      newGapStart.Format("02.01.2006"),
+		Out:     newGapEnd.Format("02.01.2006"),
+		Country: "unknown",
+	}
+
+	// Вставить "unknown" перед текущим
+	s.Data.Periods = append(
+		s.Data.Periods[:s.EditingIndex],
+		append([]Period{newGap}, s.Data.Periods[s.EditingIndex:]...)...,
+	)
+
+	// Обновляем in текущего периода
+	s.Data.Periods[s.EditingIndex+1].In = newIn.Format("02.01.2006")
+	s.EditingIndex++ // корректируем индекс
+	s.PendingAction = ""
+	s.TempDate = ""
+	saveSession(s)
+
+	bot.Send(tgbotapi.NewMessage(chatID, "➕ Добавлен период 'unknown'. Дата въезда обновлена."))
+	handlePeriodsCommand(s, callback.Message, bot)
 }
 
 func handleAwaitingNewOut(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
@@ -503,7 +583,9 @@ func handleAwaitingEditIndex(msg *tgbotapi.Message, s *Session, bot *tgbotapi.Bo
 			tgbotapi.NewInlineKeyboardButtonData("🌍 Изменить страну", "edit_country"),
 		),
 	)
-	msgText := fmt.Sprintf("Период %d выбран. Что изменить?", index)
+	from := s.Data.Periods[s.EditingIndex].In
+	till := s.Data.Periods[s.EditingIndex].Out
+	msgText := fmt.Sprintf("Выбран период с %s по %s. Что изменить?", from, till)
 	msgToSend := tgbotapi.NewMessage(msg.Chat.ID, msgText)
 	msgToSend.ReplyMarkup = buttons
 	bot.Send(msgToSend)
@@ -543,6 +625,8 @@ func main() {
 				handleUploadCommand(s, callback.Message, bot)
 			case "periods":
 				handlePeriodsCommand(s, callback.Message, bot)
+			case "add_gap_period":
+				handleAddGapPeriod(s, callback, bot)
 			case "adjust_next_in":
 				newOut, _ := parseDate(s.TempDate)
 				s.Data.Periods[s.EditingIndex+1].In = newOut.Format("02.01.2006")
@@ -610,12 +694,12 @@ func main() {
 				s.PendingAction = "awaiting_new_in"
 				saveSession(s)
 				curr := s.Data.Periods[s.EditingIndex].In
-				bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Введите новую дату въезда %s:", curr)))
+				bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату въезда:", curr)))
 			case "edit_out":
 				s.PendingAction = "awaiting_new_out"
 				saveSession(s)
 				curr := s.Data.Periods[s.EditingIndex].Out
-				bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Введите новую дату выезда %s:", curr)))
+				bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату выезда:", curr)))
 			case "edit_country":
 				s.PendingAction = "awaiting_new_country"
 				saveSession(s)
