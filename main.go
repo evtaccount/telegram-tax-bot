@@ -415,8 +415,10 @@ func main() {
 			}
 			s.Data = Data{}
 			s.Backup = Data{}
+			_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir)) // ✅ удаляем файл
 			saveSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
+			fmt.Println("Periods after reset:", len(s.Data.Periods))
 		case strings.HasPrefix(text, "/undo"):
 			if len(s.Data.Periods) != 0 {
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
