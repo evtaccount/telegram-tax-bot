@@ -39,6 +39,7 @@ type Session struct {
 	Temp          []Period
 	EditingIndex  int
 	PendingAction string
+	TempDate      string
 }
 
 var sessions = map[int64]*Session{}
@@ -340,19 +341,39 @@ func handleAwaitingAddCountry(msg *tgbotapi.Message, s *Session, bot *tgbotapi.B
 func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
 	newDate, err := parseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ"))
 		return
 	}
+
 	if s.EditingIndex > 0 {
 		prevOut := s.Data.Periods[s.EditingIndex-1].Out
 		if prevOut != "" {
 			prevOutDate, _ := parseDate(prevOut)
+
 			if newDate.Before(prevOutDate) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Дата въезда не может быть раньше даты выезда предыдущего периода."))
+				s.TempDate = newDate.Format("02.01.2006")
+				s.PendingAction = "conflict_prev_out"
+
+				row := []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
+				}
+
+				if prevOutDate.AddDate(0, 0, 1).Equal(newDate) {
+					row = append(row, tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"))
+				}
+
+				row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel_edit"))
+
+				msg := tgbotapi.NewMessage(msg.Chat.ID, "🕓 Новая дата въезда раньше окончания предыдущего периода. Что сделать?")
+				msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(row...))
+				bot.Send(msg)
+
+				saveSession(s)
 				return
 			}
 		}
 	}
+
 	s.Data.Periods[s.EditingIndex].In = newDate.Format("02.01.2006")
 	s.PendingAction = ""
 	saveSession(s)
@@ -360,30 +381,43 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 }
 
 func handleAwaitingNewOut(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
-	newDate, err := parseDate(msg.Text)
+	newOut, err := parseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ"))
 		return
 	}
-	in := s.Data.Periods[s.EditingIndex].In
-	if in != "" {
-		inDate, _ := parseDate(in)
-		if newDate.Before(inDate) {
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Дата выезда не может быть раньше даты въезда."))
-			return
-		}
-	}
-	if s.EditingIndex < len(s.Data.Periods)-1 {
+
+	// Проверка на конфликт с датой in следующего периода
+	if s.EditingIndex+1 < len(s.Data.Periods) {
 		nextIn := s.Data.Periods[s.EditingIndex+1].In
 		if nextIn != "" {
 			nextInDate, _ := parseDate(nextIn)
-			if newDate.After(nextInDate) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Дата выезда не может быть позже даты въезда следующего периода."))
+
+			if newOut.After(nextInDate) {
+				s.TempDate = newOut.Format("02.01.2006")
+				s.PendingAction = "conflict_next_in"
+
+				row := []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть следующий период", "adjust_next_in"),
+				}
+
+				if newOut.AddDate(0, 0, 1).Equal(nextInDate) {
+					row = append(row, tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"))
+				}
+
+				row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel_edit"))
+
+				msg := tgbotapi.NewMessage(msg.Chat.ID, "🕓 Новая дата выезда позже начала следующего периода. Что сделать?")
+				msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(row...))
+				bot.Send(msg)
+
+				saveSession(s)
 				return
 			}
 		}
 	}
-	s.Data.Periods[s.EditingIndex].Out = newDate.Format("02.01.2006")
+
+	s.Data.Periods[s.EditingIndex].Out = newOut.Format("02.01.2006")
 	s.PendingAction = ""
 	saveSession(s)
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена."))
@@ -477,6 +511,29 @@ func main() {
 				handleUploadCommand(s, callback.Message, bot)
 			case "periods":
 				handlePeriodsCommand(s, callback.Message, bot)
+			case "adjust_next_in":
+				newOut, _ := parseDate(s.TempDate)
+				s.Data.Periods[s.EditingIndex+1].In = newOut.Format("02.01.2006")
+				s.Data.Periods[s.EditingIndex].Out = newOut.Format("02.01.2006")
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "📌 Следующий период подвинут. Дата выезда обновлена."))
+
+			case "keep_conflict":
+				if s.PendingAction == "conflict_prev_out" {
+					s.Data.Periods[s.EditingIndex].In = s.TempDate
+				} else if s.PendingAction == "conflict_next_in" {
+					s.Data.Periods[s.EditingIndex].Out = s.TempDate
+				}
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "✅ Дата обновлена. Конфликт проигнорирован."))
+
+			case "cancel_edit":
+				s.TempDate = ""
+				s.PendingAction = ""
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(chatID, "❌ Изменение отменено."))
 			case "show_report":
 				report := buildReport(s.Data)
 				bot.Send(tgbotapi.NewMessage(chatID, report))
@@ -484,7 +541,6 @@ func main() {
 				s.PendingAction = "awaiting_add_in"
 				saveSession(s)
 				bot.Send(tgbotapi.NewMessage(chatID, "📅 Введите дату въезда (ДД.ММ.ГГГГ):"))
-
 			case "delete_period":
 				if isEmpty(s) {
 					bot.Send(tgbotapi.NewMessage(chatID, "📭 Нет сохранённых периодов для удаления."))
