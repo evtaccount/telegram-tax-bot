@@ -351,23 +351,47 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 			prevOutDate, _ := parseDate(prevOut)
 
 			if newDate.Before(prevOutDate) {
+				// ⛔ Конфликт: новая дата раньше предыдущего out
 				s.TempDate = newDate.Format("02.01.2006")
 				s.PendingAction = "conflict_prev_out"
 
 				row := []tgbotapi.InlineKeyboardButton{
 					tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
 				}
-
 				if prevOutDate.AddDate(0, 0, 1).Equal(newDate) {
 					row = append(row, tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"))
 				}
-
-				row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel_edit"))
+				row = append(row,
+					tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap"),
+					tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit"),
+				)
 
 				msg := tgbotapi.NewMessage(msg.Chat.ID, "🕓 Новая дата въезда раньше окончания предыдущего периода. Что сделать?")
 				msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(row...))
 				bot.Send(msg)
+				saveSession(s)
+				return
+			}
 
+			// 💡 Проверяем зазор между предыдущим out и новым in
+			if newDate.After(prevOutDate.AddDate(0, 0, 1)) {
+				s.TempDate = newDate.Format("02.01.2006")
+				s.PendingAction = "gap_detected"
+
+				row := []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out"),
+					tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict"),
+					tgbotapi.NewInlineKeyboardButtonData("➖ Не добавлять период", "skip_gap"),
+					tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit"),
+				}
+
+				message := tgbotapi.NewMessage(msg.Chat.ID,
+					fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?",
+						prevOutDate.AddDate(0, 0, 1).Format("02.01.2006"),
+						newDate.Format("02.01.2006"),
+					))
+				message.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(row...))
+				bot.Send(message)
 				saveSession(s)
 				return
 			}
@@ -562,16 +586,19 @@ func main() {
 				s.Data.Periods[s.EditingIndex-1].Out = newIn.Format("02.01.2006")
 				s.Data.Periods[s.EditingIndex].In = newIn.Format("02.01.2006")
 				s.PendingAction = ""
+				s.TempDate = ""
 				saveSession(s)
 				bot.Send(tgbotapi.NewMessage(chatID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
 			case "edit_in":
 				s.PendingAction = "awaiting_new_in"
 				saveSession(s)
-				bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите новую дату въезда (ДД.ММ.ГГГГ):"))
+				curr := s.Data.Periods[s.EditingIndex].In
+				bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Введите новую дату въезда %s:", curr)))
 			case "edit_out":
 				s.PendingAction = "awaiting_new_out"
 				saveSession(s)
-				bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите новую дату выезда (ДД.ММ.ГГГГ):"))
+				curr := s.Data.Periods[s.EditingIndex].Out
+				bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Введите новую дату выезда %s:", curr)))
 			case "edit_country":
 				s.PendingAction = "awaiting_new_country"
 				saveSession(s)
