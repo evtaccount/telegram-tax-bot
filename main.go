@@ -183,15 +183,6 @@ func backupSession(s *Session) {
 	s.Backup = s.Data
 }
 
-func undoSession(s *Session) string {
-	if len(s.Backup.Periods) == 0 {
-		return "Нет изменений для отката."
-	}
-	s.Data = s.Backup
-	saveSession(s)
-	return "Последнее изменение отменено."
-}
-
 func saveSession(s *Session) {
 	b, _ := json.MarshalIndent(s.Data, "", "  ")
 	_ = os.WriteFile(fmt.Sprintf("%s/data.json", s.HistoryDir), b, 0644)
@@ -323,8 +314,6 @@ func main() {
 				handleHelpCommand(callback.Message, bot)
 			case "reset":
 				handleResetCommand(s, callback.Message, bot)
-			case "undo":
-				handleUndoCommand(s, callback.Message, bot)
 			case "set_date":
 				handleSetDateCommand(s, callback.Message, bot)
 			case "upload_report", "upload_file":
@@ -367,16 +356,6 @@ func main() {
 				handleStartCommand(s, msg, bot)
 			case strings.HasPrefix(text, "/help"):
 				handleHelpCommand(msg, bot)
-			case strings.HasPrefix(text, "/reset"):
-				handleResetCommand(s, msg, bot)
-			case strings.HasPrefix(text, "/undo"):
-				handleUndoCommand(s, msg, bot)
-			case strings.HasPrefix(text, "/setdate"):
-				handleSetDateCommand(s, msg, bot)
-			case strings.HasPrefix(text, "/upload_report"):
-				handleUploadCommand(s, msg, bot)
-			case strings.HasPrefix(text, "/periods"):
-				handlePeriodsCommand(s, msg, bot)
 			default:
 				if strings.HasPrefix(text, "{") {
 					handleJSONInput(msg, s, bot)
@@ -395,14 +374,27 @@ func handleStartCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI)
 }
 
 func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n"+
-		"/start — меню\n"+
-		"/help — помощь\n"+
-		"/periods — список всех сохранённых периодов\n"+
-		"/upload_report — загрузить JSON-файл\n"+
-		"/setdate — установить дату расчета\n"+
-		"/reset — сброс данных\n"+
-		"/undo — отменить последнее изменение"))
+	helpText := `ℹ️ Этот бот помогает определить налоговое резидентство на основе загруженных периодов пребывания в разных странах.
+
+📎 С чего начать?
+1. Сформируйте JSON-файл со списком ваших поездок (формат пример — по кнопке "Загрузить файл").
+2. Отправьте файл через команду /upload_report или с помощью кнопки 📎.
+3. Бот рассчитает, в какой стране вы провели больше всего времени за последний год.
+
+📅 Как задать дату расчета?
+— Выберите "📅 Задать дату" и укажите дату, на которую хотите сделать расчет (например: 15.04.2025).
+
+📊 Что покажет отчет?
+— Страну, в которой вы провели больше всего дней.
+— Если есть страна с 183+ днями — вы налоговый резидент этой страны.
+
+🔁 Другие функции:
+— /reset: сбросить все данные
+— /periods: показать список загруженных периодов
+
+💬 Используйте /start для возврата в главное меню.`
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, helpText))
 }
 
 func handleResetCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -415,15 +407,6 @@ func handleResetCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI)
 	_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
 	saveSession(s)
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
-}
-
-func handleUndoCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
-	if isEmpty(s) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
-		return
-	}
-	response := undoSession(s)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
 }
 
 func handleSetDateCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -490,9 +473,9 @@ func buildMainMenu(s *Session) tgbotapi.InlineKeyboardMarkup {
 	}
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📋 Показать текущие данные", "periods")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📅 Задать дату", "set_date")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📊 Отчет", "show_report")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_report")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📊 Отчёт", "show_report")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📅 Отчёт на заданную дату", "set_date")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить новый файл", "upload_report")),
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", "reset")),
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help")),
 	)
