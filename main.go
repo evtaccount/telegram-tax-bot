@@ -334,129 +334,78 @@ func main() {
 		msg := update.Message
 		userID := msg.From.ID
 
-		s, ok := sessions[userID]
-		if !ok {
-			s = &Session{UserID: userID}
-			s.HistoryDir = ensureDirs(userID)
-			loadUserData(s)
-			sessions[userID] = s
-		}
+		s := getSession(userID)
 
 		text := msg.Text
 
-		// Обработка JSON-файла (только после команды /upload_report)
+		// Загрузка файла после upload_report
 		if msg.Document != nil && s.Data.Current == "upload_pending" {
 			handleInputFile(msg, s, bot)
 			continue
 		}
 
-		// Если пользователь ожидается ввод даты
+		// Обработка даты после /setdate
 		if s.PendingAction == "awaiting_date" {
-			parsed, err := parseDate(text)
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ"))
-				continue
-			}
-			s.Data.Current = parsed.Format("02.01.2006")
-			s.PendingAction = ""
-			saveSession(s)
-			report := buildReport(s.Data)
-			response := fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report)
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
+			handleDateInput(msg, s, bot)
 			continue
 		}
 
 		switch {
 		case strings.HasPrefix(text, "/start"):
-			if len(s.Data.Periods) == 0 {
-				buttons := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_file"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help"),
-					),
-				)
-				msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
-				msg.ReplyMarkup = buttons
-				bot.Send(msg)
-			} else {
-				buttons := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("📋 Показать текущие данные", "periods"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("📅 Задать дату", "set_date"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("📊 Отчет", "show_report"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_report"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", "reset"),
-					),
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help"),
-					),
-				)
+			msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
+			msg.ReplyMarkup = buildMainMenu(s)
+			bot.Send(msg)
 
-				msg := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
-				msg.ReplyMarkup = buttons
-				bot.Send(msg)
-			}
 		case strings.HasPrefix(text, "/help"):
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Доступные команды:\n/start — начало\n/help — помощь\n/periods — список всех сохранённых периодов\n/upload_report — загрузить JSON файл\n/setdate ДД.ММ.ГГГГ — установить дату расчета\n/reset — сброс данных\n/undo — отменить последнее изменение"))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID,
+				"ℹ️ Доступные команды:\n"+
+					"/start — меню\n"+
+					"/help — помощь\n"+
+					"/periods — список всех сохранённых периодов\n"+
+					"/upload_report — загрузить JSON-файл\n"+
+					"/setdate — установить дату расчета\n"+
+					"/reset — сброс данных\n"+
+					"/undo — отменить последнее изменение"))
+
 		case strings.HasPrefix(text, "/reset"):
-			if len(s.Data.Periods) != 0 {
+			if isEmpty(s) {
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
 				continue
 			}
 			s.Data = Data{}
 			s.Backup = Data{}
-			_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir)) // ✅ удаляем файл
+			_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
 			saveSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены."))
-			fmt.Println("Periods after reset:", len(s.Data.Periods))
+
 		case strings.HasPrefix(text, "/undo"):
-			if len(s.Data.Periods) != 0 {
+			if isEmpty(s) {
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
 				continue
 			}
-			response := undoSession(s)
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, undoSession(s)))
+
 		case strings.HasPrefix(text, "/setdate"):
-			if len(s.Data.Periods) != 0 {
+			if isEmpty(s) {
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
 				continue
 			}
 			s.PendingAction = "awaiting_date"
 			saveSession(s)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ"))
+
 		case strings.HasPrefix(text, "/upload_report"):
 			s.Data.Current = "upload_pending"
 			saveSession(s)
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте файл с данными в формате JSON как документ."))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте JSON-файл как документ."))
+
 		case strings.HasPrefix(text, "/periods"):
-			if len(s.Data.Periods) == 0 {
+			if isEmpty(s) {
 				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
 				continue
 			}
-			builder := strings.Builder{}
-			builder.WriteString("📋 Список периодов:\n\n")
-			for i, p := range s.Data.Periods {
-				in := p.In
-				if in == "" {
-					in = "—"
-				}
-				out := p.Out
-				if out == "" {
-					out = "по " + s.Data.Current
-				}
-				builder.WriteString(fmt.Sprintf("%d. %s — %s (%s)\n", i+1, in, out, p.Country))
-			}
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, builder.String()))
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, buildPeriodsList(s)))
+
 		default:
 			if strings.HasPrefix(text, "{") {
 				handleJSONInput(msg, s, bot)
@@ -465,6 +414,71 @@ func main() {
 			}
 		}
 	}
+}
+
+func handleDateInput(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	text := msg.Text
+	parsed, err := parseDate(text)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте формат: ДД.ММ.ГГГГ"))
+		return
+	}
+	s.Data.Current = parsed.Format("02.01.2006")
+	s.PendingAction = ""
+	saveSession(s)
+
+	report := buildReport(s.Data)
+	response := fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report)
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, response))
+}
+
+func getSession(userID int64) *Session {
+	s, ok := sessions[userID]
+	if !ok {
+		s = &Session{UserID: userID}
+		s.HistoryDir = ensureDirs(userID)
+		loadUserData(s)
+		sessions[userID] = s
+	}
+	return s
+}
+
+func isEmpty(s *Session) bool {
+	return len(s.Data.Periods) == 0
+}
+
+func buildMainMenu(s *Session) tgbotapi.InlineKeyboardMarkup {
+	if isEmpty(s) {
+		return tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_file")),
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help")),
+		)
+	}
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📋 Показать текущие данные", "periods")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📅 Задать дату", "set_date")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📊 Отчет", "show_report")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📎 Загрузить файл", "upload_report")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", "reset")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "help")),
+	)
+}
+
+func buildPeriodsList(s *Session) string {
+	builder := strings.Builder{}
+	builder.WriteString("📋 Список периодов:\n\n")
+	for i, p := range s.Data.Periods {
+		in := p.In
+		if in == "" {
+			in = "—"
+		}
+		out := p.Out
+		if out == "" {
+			out = "по " + s.Data.Current
+		}
+		builder.WriteString(fmt.Sprintf("%d. %s — %s (%s)\n", i+1, in, out, p.Country))
+	}
+	return builder.String()
 }
 
 func handleInputFile(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
