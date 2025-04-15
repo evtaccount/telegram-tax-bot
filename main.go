@@ -286,7 +286,8 @@ func handleSetDateCommand(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAP
 	}
 	s.Data.Current = parsed.Format("02.01.2006")
 	saveSession(s)
-	response := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s", s.Data.Current))
+	report := buildReport(s.Data)
+	response := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report))
 	bot.Send(response)
 }
 
