@@ -398,7 +398,7 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI
 						prevOutDate.AddDate(0, 0, 1).Format("02.01.2006"),
 						newDate.Format("02.01.2006"),
 					))
-				message.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(row...))
+				message.ReplyMarkup = row
 				bot.Send(message)
 				saveSession(s)
 				return
