@@ -10,7 +10,7 @@ COPY . .
 
 # Кросс-компиляция под Linux x86_64
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
-RUN go build -o bot main.go
+RUN go build -o bot .
 
 FROM alpine:latest
 
