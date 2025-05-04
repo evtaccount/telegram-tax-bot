@@ -1,4 +1,4 @@
-module telegram-tax-bot
+module github.com/evgenii-ev/go-tax-bot
 
 go 1.24.2
 
