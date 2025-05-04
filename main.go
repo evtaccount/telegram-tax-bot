@@ -357,25 +357,48 @@ func handleAwaitingAddOut(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAP
 }
 
 func handleAwaitingAddCountry(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	country := strings.TrimSpace(msg.Text)
+	if country == "" {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Страна не может быть пустой."))
+		return
+	}
 	if len(s.Temp) == 0 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка. Начните добавление заново."))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка: временный буфер пуст."))
 		s.PendingAction = ""
 		return
 	}
-	s.Temp[0].Country = strings.TrimSpace(msg.Text)
-	s.Data.Periods = append(s.Data.Periods, s.Temp[0])
-	sort.Slice(s.Data.Periods, func(i, j int) bool {
-		inI, errI := parseDate(s.Data.Periods[i].In)
-		inJ, errJ := parseDate(s.Data.Periods[j].In)
-		if errI != nil || errJ != nil {
-			return i < j
+	period := s.Temp[0]
+	period.Country = country
+
+	// Проверка хронологического порядка
+	newIn, errIn := parseDate(period.In)
+	if errIn != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Некорректная дата въезда."))
+		return
+	}
+
+	if len(s.Data.Periods) > 0 {
+		last := s.Data.Periods[len(s.Data.Periods)-1]
+		lastOut := last.Out
+		if lastOut == "" {
+			lastOut = s.Data.Current
 		}
-		return inI.Before(inJ)
-	})
+		lastOutDate, err := parseDate(lastOut)
+		if err == nil && newIn.Before(lastOutDate) {
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Невозможно добавить период: нарушен хронологический порядок."))
+			s.PendingAction = ""
+			s.Temp = nil
+			return
+		}
+	}
+
+	s.Data.Periods = append(s.Data.Periods, period)
 	s.Temp = nil
 	s.PendingAction = ""
 	saveSession(s)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Период успешно добавлен."))
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleAddGapPeriod(s *Session, callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
@@ -733,10 +756,47 @@ func main() {
 				msg.ReplyMarkup = buildBackToMenu()
 				bot.Send(msg)
 			case "add_period":
-				s.PendingAction = "awaiting_add_in"
+				// меню выбора варианта добавления
+				reply := tgbotapi.NewMessage(chatID, "➕ Что добавить?")
+				reply.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("🗓 Хвостовой (только выезд)", "add_tail"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("⏮ Начальный (только въезд)", "add_head"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("📄 Полный (въезд+выезд)", "add_full"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "start"),
+					),
+				)
+				bot.Send(reply)
+
+			case "add_tail":
+				s.PendingAction = "awaiting_tail_out"
 				saveSession(s)
-				bot.Send(tgbotapi.NewMessage(chatID, "📅 Введите дату въезда (ДД.ММ.ГГГГ):"))
-			case "delete_period":
+
+				replay := tgbotapi.NewMessage(chatID, "📆 Введите дату выезда (ДД.MM.YYYY):")
+				replay.ReplyMarkup = buildBackToMenu()
+				bot.Send(replay)
+
+			case "add_head":
+				s.PendingAction = "awaiting_head_in"
+				saveSession(s)
+
+				replay := tgbotapi.NewMessage(chatID, "📆 Введите дату въезда (ДД.MM.YYYY):")
+				replay.ReplyMarkup = buildBackToMenu()
+				bot.Send(replay)
+
+			case "add_full":
+				s.PendingAction = "awaiting_full_in"
+				saveSession(s)
+
+				replay := tgbotapi.NewMessage(chatID, "📆 Введите дату въезда (ДД.MM.YYYY):")
+				replay.ReplyMarkup = buildBackToMenu()
+				bot.Send(replay)
 				if isEmpty(s) {
 					bot.Send(tgbotapi.NewMessage(chatID, "📭 Нет сохранённых периодов для удаления."))
 				} else {
@@ -812,6 +872,19 @@ func main() {
 			case "awaiting_add_country":
 				handleAwaitingAddCountry(msg, s, bot)
 				return
+			case "awaiting_add_open_country":
+				handleAddOpenCountry(msg, s, bot)
+			case "awaiting_add_in":
+				text := strings.TrimSpace(msg.Text)
+				_, err := parseDate(text)
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Введите ДД.ММ.ГГГГ"))
+					return
+				}
+				s.Temp = []Period{{In: text}} // сохраняем только дату in во временное хранилище
+				s.PendingAction = "awaiting_add_out"
+				saveSession(s)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.ММ.ГГГГ):"))
 			}
 
 			// ✅ Загрузка JSON-файла
@@ -835,6 +908,24 @@ func main() {
 			}
 		}
 	}
+}
+
+func handleAddOpenCountry(msg *tgbotapi.Message, s *Session, bot *tgbotapi.BotAPI) {
+	country := strings.TrimSpace(msg.Text)
+	if country == "" {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Название страны не может быть пустым"))
+		return
+	}
+	s.Data.Periods = append(s.Data.Periods, Period{
+		In:      s.Data.Current,
+		Out:     "",
+		Country: country,
+	})
+	s.PendingAction = ""
+	saveSession(s)
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleStartCommand(s *Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
