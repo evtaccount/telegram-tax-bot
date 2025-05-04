@@ -43,96 +43,41 @@ func (r *Registry) handleCallback(callback *tgbotapi.CallbackQuery) {
 	case "cancel_edit":
 		handleCancelEdit(session, message, r.bot)
 	case "show_report":
-		report := reportbuilder.BuildReport(session.Data)
-		msg := tgbotapi.NewMessage(chatID, report)
-		msg.ReplyMarkup = keyboard.BuildBackToMenu()
-		r.bot.Send(msg)
+		handleShowReport(session, message, r.bot)
+
 	case "add_period":
-		// меню выбора варианта добавления
-		reply := tgbotapi.NewMessage(chatID, "➕ Что добавить?")
-		reply.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🗓 Хвостовой (только выезд)", "add_tail"),
-			),
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("⏮ Начальный (только въезд)", "add_head"),
-			),
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("📄 Полный (въезд+выезд)", "add_full"),
-			),
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "start"),
-			),
-		)
-		r.bot.Send(reply)
+		handleAddPeriod(message, r.bot)
 
 	case "add_tail":
-		session.PendingAction = "awaiting_tail_out"
-		session.SaveSession()
-
-		replay := tgbotapi.NewMessage(chatID, "📆 Введите дату выезда (ДД.MM.YYYY):")
-		replay.ReplyMarkup = keyboard.BuildBackToMenu()
-		r.bot.Send(replay)
+		handleAddTail(session, message, r.bot)
 
 	case "add_head":
-		session.PendingAction = "awaiting_head_in"
-		session.SaveSession()
-
-		replay := tgbotapi.NewMessage(chatID, "📆 Введите дату въезда (ДД.MM.YYYY):")
-		replay.ReplyMarkup = keyboard.BuildBackToMenu()
-		r.bot.Send(replay)
+		handleAddHead(session, message, r.bot)
 
 	case "add_full":
-		session.PendingAction = "awaiting_full_in"
-		session.SaveSession()
+		handleAddFull(session, message, r.bot)
 
-		replay := tgbotapi.NewMessage(chatID, "📆 Введите дату въезда (ДД.MM.YYYY):")
-		replay.ReplyMarkup = keyboard.BuildBackToMenu()
-		r.bot.Send(replay)
-		if session.IsEmpty() {
-			r.bot.Send(tgbotapi.NewMessage(chatID, "📭 Нет сохранённых периодов для удаления."))
-		} else {
-			session.PendingAction = "awaiting_delete_index"
-			session.SaveSession()
-			r.bot.Send(tgbotapi.NewMessage(chatID, "❌ Укажите номер периода, который нужно удалить:"))
-		}
 	case "edit_period":
-		if session.IsEmpty() {
-			r.bot.Send(tgbotapi.NewMessage(chatID, "📭 Нет сохранённых периодов для редактирования."))
-		} else {
-			session.PendingAction = "awaiting_edit_index"
-			session.SaveSession()
-			r.bot.Send(tgbotapi.NewMessage(chatID, "✏️ Введите номер периода, который хотите отредактировать:"))
-		}
+		handleEditPeriod(session, message, r.bot)
+
 	case "adjust_prev_out":
-		newIn, _ := utils.ParseDate(session.TempEditedIn)
-		session.Data.Periods[session.EditingIndex-1].Out = newIn.Format("02.01.2006")
-		session.Data.Periods[session.EditingIndex].In = newIn.Format("02.01.2006")
-		session.PendingAction = ""
-		session.TempEditedIn = ""
-		session.SaveSession()
-		r.bot.Send(tgbotapi.NewMessage(chatID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
+		handleAdjustPrevOut(session, callback.Message, r.bot)
 		handlePeriodsCommand(session, callback.Message, r.bot)
+
 	case "edit_in":
-		session.PendingAction = "awaiting_new_in"
-		session.SaveSession()
-		curr := session.Data.Periods[session.EditingIndex].In
-		r.bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату въезда:", curr)))
+		handleEdinIn(session, callback.Message, r.bot)
+
 	case "edit_out":
-		session.PendingAction = "awaiting_new_out"
-		session.SaveSession()
-		curr := session.Data.Periods[session.EditingIndex].Out
-		r.bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату выезда:", curr)))
+		handleEditOut(session, callback.Message, r.bot)
+
 	case "edit_country":
-		session.PendingAction = "awaiting_new_country"
-		session.SaveSession()
-		r.bot.Send(tgbotapi.NewMessage(chatID, "🌍 Введите новое название страны:"))
+		handleEditCountry(session, callback.Message, r.bot)
+
 	default:
 		r.bot.Send(tgbotapi.NewMessage(chatID, "❓ Неизвестная кнопка."))
 	}
 
 	r.bot.Request(tgbotapi.NewCallback(callback.ID, ""))
-	// continue
 }
 
 func handleStartCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -303,6 +248,110 @@ func handleCancelEdit(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bot
 
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Изменение отменено."))
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+}
+
+func handleShowReport(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	report := reportbuilder.BuildReport(s.Data)
+	reply := tgbotapi.NewMessage(msg.Chat.ID, report)
+	reply.ReplyMarkup = keyboard.BuildBackToMenu()
+	bot.Send(reply)
+}
+
+func handleAddPeriod(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	// меню выбора варианта добавления
+	reply := tgbotapi.NewMessage(msg.Chat.ID, "➕ Что добавить?")
+	reply.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗓 Хвостовой (только выезд)", "add_tail"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⏮ Начальный (только въезд)", "add_head"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📄 Полный (въезд+выезд)", "add_full"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "start"),
+		),
+	)
+	bot.Send(reply)
+}
+
+func handleAddTail(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.PendingAction = "awaiting_tail_out"
+	s.SaveSession()
+
+	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.MM.YYYY):")
+	replay.ReplyMarkup = keyboard.BuildBackToMenu()
+	bot.Send(replay)
+}
+
+func handleAddHead(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.PendingAction = "awaiting_head_in"
+	s.SaveSession()
+
+	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.MM.YYYY):")
+	replay.ReplyMarkup = keyboard.BuildBackToMenu()
+	bot.Send(replay)
+}
+
+func handleAddFull(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.PendingAction = "awaiting_full_in"
+	s.SaveSession()
+
+	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.MM.YYYY):")
+	replay.ReplyMarkup = keyboard.BuildBackToMenu()
+	bot.Send(replay)
+
+	if s.IsEmpty() {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для удаления."))
+	} else {
+		s.PendingAction = "awaiting_delete_index"
+		s.SaveSession()
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Укажите номер периода, который нужно удалить:"))
+	}
+}
+
+func handleEditPeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	if s.IsEmpty() {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для редактирования."))
+	} else {
+		s.PendingAction = "awaiting_edit_index"
+		s.SaveSession()
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✏️ Введите номер периода, который хотите отредактировать:"))
+	}
+}
+
+func handleAdjustPrevOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	newIn, _ := utils.ParseDate(s.TempEditedIn)
+
+	s.Data.Periods[s.EditingIndex-1].Out = newIn.Format("02.01.2006")
+	s.Data.Periods[s.EditingIndex].In = newIn.Format("02.01.2006")
+	s.PendingAction = ""
+	s.TempEditedIn = ""
+	s.SaveSession()
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
+}
+
+func handleEdinIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.PendingAction = "awaiting_new_in"
+	s.SaveSession()
+	curr := s.Data.Periods[s.EditingIndex].In
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату въезда:", curr)))
+}
+
+func handleEditOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.PendingAction = "awaiting_new_out"
+	s.SaveSession()
+	curr := s.Data.Periods[s.EditingIndex].Out
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату выезда:", curr)))
+}
+
+func handleEditCountry(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	s.PendingAction = "awaiting_new_country"
+	s.SaveSession()
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Введите новое название страны:"))
 }
 
 func formatPeriodList(periods []model.Period, current string) string {
