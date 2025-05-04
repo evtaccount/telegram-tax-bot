@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 	"telegram-tax-bot/internal/keyboard"
+	"telegram-tax-bot/internal/manager"
 	"telegram-tax-bot/internal/model"
-	"telegram-tax-bot/internal/service"
 	"telegram-tax-bot/internal/utils"
 
 	reportbuilder "telegram-tax-bot/internal/report_builder"
@@ -16,7 +16,7 @@ import (
 
 func (r *Registry) handleCallback(callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
-	session := service.GetSession(userID)
+	session := manager.GetSession(userID)
 	data := callback.Data
 	chatID := callback.Message.Chat.ID
 	message := callback.Message

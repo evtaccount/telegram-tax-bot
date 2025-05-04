@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"telegram-tax-bot/internal/manager"
 	"telegram-tax-bot/internal/model"
-	"telegram-tax-bot/internal/service"
 	"telegram-tax-bot/internal/utils"
 	"time"
 
@@ -19,7 +19,7 @@ import (
 
 func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 	userID := msg.From.ID
-	s := service.GetSession(userID)
+	s := manager.GetSession(userID)
 	text := msg.Text
 
 	switch s.PendingAction {

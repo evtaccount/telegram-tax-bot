@@ -4,15 +4,15 @@ import (
 	"log"
 	"telegram-tax-bot/internal/bot"
 	"telegram-tax-bot/internal/config"
+	file_storage "telegram-tax-bot/internal/file_storage"
 	"telegram-tax-bot/internal/handler"
-	"telegram-tax-bot/internal/service"
-	"telegram-tax-bot/internal/storage"
+	service "telegram-tax-bot/internal/user_storage"
 )
 
 func main() {
 	cfg := config.Load()
-	strg := storage.NewFileStorage(cfg.DataDir)
-	sst := service.NewSessionStorage(strg)
+	strg := file_storage.NewFileStorage(cfg.DataDir)
+	sst := service.NewUserStorage(strg)
 
 	tgBot, err := bot.New(cfg.TelegramToken)
 	if err != nil {

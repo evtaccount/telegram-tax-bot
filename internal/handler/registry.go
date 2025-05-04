@@ -1,19 +1,19 @@
 package handler
 
 import (
-	"telegram-tax-bot/internal/service"
+	user_storage "telegram-tax-bot/internal/user_storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type Registry struct {
 	bot *tgbotapi.BotAPI
-	sst *service.SessionStorate
+	ust *user_storage.UserStorate
 }
 
 // Register binds message/​callback handling and spawns update loop.
-func Register(api *tgbotapi.BotAPI, sst *service.SessionStorate) {
-	r := &Registry{bot: api, sst: sst}
+func Register(api *tgbotapi.BotAPI, ust *user_storage.UserStorate) {
+	r := &Registry{bot: api, ust: ust}
 	go r.listen() // background
 }
 
