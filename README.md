@@ -19,3 +19,5 @@ docker-compose up --build -d
 - Добавление / редактирование периодов
 - Выгрузка отчёта
 - История на диске
+
+Дополнительная документация: [docs/features_ru.md](docs/features_ru.md)
