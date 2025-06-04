@@ -21,6 +21,9 @@ func (r *Registry) handleCallback(callback *tgbotapi.CallbackQuery) {
 	chatID := callback.Message.Chat.ID
 	message := callback.Message
 
+	// Remove inline keyboard from the message that triggered the callback
+	removeInlineKeyboard(r.bot, chatID, message.MessageID)
+
 	switch data {
 	case "start":
 		handleStartCommand(session, message, r.bot)
@@ -367,4 +370,10 @@ func formatPeriodList(periods []model.Period, current string) string {
 		builder.WriteString(fmt.Sprintf("%d. %s — %s (%s%s)\n", i+1, in, out, flag, p.Country))
 	}
 	return builder.String()
+}
+
+// removeInlineKeyboard clears the inline keyboard from a message without deleting the message itself.
+func removeInlineKeyboard(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
+	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{})
+	_, _ = bot.Request(edit)
 }
