@@ -229,7 +229,7 @@ func handleKeepConflict(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 		s.SaveSession()
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
 	} else if s.PendingAction == "confirm_conflict_out" {
-		s.Data.Periods[s.EditingIndex].Out = s.TempEditedIn
+		s.Data.Periods[s.EditingIndex].Out = s.TempEditedOut
 		s.PendingAction = ""
 		s.SaveSession()
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена."))
@@ -296,20 +296,12 @@ func handleAddHead(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI
 }
 
 func handleAddFull(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
-	s.PendingAction = "awaiting_full_in"
+	s.PendingAction = "awaiting_add_in"
 	s.SaveSession()
 
 	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.MM.YYYY):")
 	replay.ReplyMarkup = keyboard.BuildBackToMenu()
 	bot.Send(replay)
-
-	if s.IsEmpty() {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для удаления."))
-	} else {
-		s.PendingAction = "awaiting_delete_index"
-		s.SaveSession()
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Укажите номер периода, который нужно удалить:"))
-	}
 }
 
 func handleEditPeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
