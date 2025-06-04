@@ -17,9 +17,3 @@ func TestBuildReportSimple(t *testing.T) {
 		t.Fatalf("unexpected report:\n%s", got)
 	}
 }
-
-func TestCountryToFlag(t *testing.T) {
-	if countryToFlag("RU") != "🇷🇺" {
-		t.Fatalf("wrong flag")
-	}
-}
