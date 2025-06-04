@@ -16,6 +16,17 @@ func BuildBackToMenu() tgbotapi.ReplyKeyboardMarkup {
 	return markup
 }
 
+// BuildBack returns a keyboard with a single "Назад" button.
+func BuildBack() tgbotapi.ReplyKeyboardMarkup {
+	markup := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+	markup.ResizeKeyboard = true
+	return markup
+}
+
 func BuildMainMenu(s *model.Session) tgbotapi.ReplyKeyboardMarkup {
 	var rows [][]tgbotapi.KeyboardButton
 

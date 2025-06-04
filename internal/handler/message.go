@@ -34,6 +34,9 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 	case strings.HasPrefix(text, "/start"), text == "🔙 Назад в меню":
 		handleStartCommand(s, msg, r.bot)
 		return
+	case text == "🔙 Назад":
+		handleBack(s, msg, r.bot)
+		return
 	case strings.HasPrefix(text, "/help"), text == "ℹ️ Помощь":
 		handleHelpCommand(msg, r.bot)
 		return
@@ -199,7 +202,7 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 	if newDate.Equal(oldDate) {
 		s.PendingAction = ""
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Дата въезда не изменилась."))
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+		handlePeriodsCommand(s, msg, bot)
 		return
 	}
 
@@ -245,7 +248,7 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 	s.PendingAction = ""
 	s.SaveSession()
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
@@ -266,7 +269,7 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 	if newDate.Equal(oldDate) {
 		s.PendingAction = ""
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Дата выезда не изменилась."))
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+		handlePeriodsCommand(s, msg, bot)
 		return
 	}
 
@@ -310,7 +313,7 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 	s.PendingAction = ""
 	s.SaveSession()
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена."))
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleAwaitingNewCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
@@ -323,6 +326,7 @@ func handleAwaitingNewCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbo
 	s.PendingAction = ""
 	s.SaveSession()
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Страна обновлена."))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleAwaitingAddOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
