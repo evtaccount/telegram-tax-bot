@@ -254,6 +254,8 @@ func handleBack(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 		s.PendingAction = ""
 		s.SaveSession()
 		handlePeriodsCommand(s, msg, bot)
+	case "awaiting_edit_field":
+		handleEditPeriod(s, msg, bot)
 	case "awaiting_new_in", "awaiting_new_out", "awaiting_new_country":
 		s.PendingAction = "awaiting_edit_field"
 		s.SaveSession()

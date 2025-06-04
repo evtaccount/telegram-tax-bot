@@ -82,6 +82,7 @@ func BuildEditFieldMenu() tgbotapi.ReplyKeyboardMarkup {
 		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("📅 Изменить дату въезда (in)")),
 		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("📆 Изменить дату выезда (out)")),
 		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("🌍 Изменить страну")),
+		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("🔙 Назад")),
 	)
 	markup.ResizeKeyboard = true
 	return markup
