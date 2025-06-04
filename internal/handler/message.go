@@ -78,7 +78,7 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		if strings.HasPrefix(text, "{") {
 			handleJSONInput(msg, s, r.bot)
 		} else {
-			r.bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help для списка."))
+			r.bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help, чтобы посмотреть список."))
 		}
 	}
 }
@@ -117,7 +117,7 @@ func handleAwaitingEditIndex(msg *tgbotapi.Message, s *model.Session, bot *tgbot
 func handleAwaitingDate(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
 	date, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ"))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
 		return
 	}
 	s.Data.Current = date.Format("02.01.2006")
@@ -252,7 +252,7 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 				s.PendingAction = "resolve_out_gap"
 				s.SaveSession()
 
-				text := fmt.Sprintf("⚠️ Между %s и %s образовался зазор. Что сделать?",
+				text := fmt.Sprintf("⚠️ Между %s и %s образовался разрыв. Что сделать?",
 					utils.FormatDate(newDate.AddDate(0, 0, 1)), utils.FormatDate(nextIn))
 				markup := tgbotapi.NewInlineKeyboardMarkup(
 					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть следующий период", "adjust_next_in")),
@@ -482,7 +482,7 @@ func handleAddin(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) 
 	text := strings.TrimSpace(msg.Text)
 	_, err := utils.ParseDate(text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Введите ДД.ММ.ГГГГ"))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Введите ДД.ММ.ГГГГ."))
 		return
 	}
 	s.Temp = []model.Period{{In: text}} // сохраняем только дату in во временное хранилище
@@ -495,7 +495,7 @@ func handleJSONInput(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotA
 	s.BackupSession()
 	err := json.Unmarshal([]byte(msg.Text), &s.Data)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON"))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON."))
 		return
 	}
 	if s.Data.Current == "" {
@@ -513,7 +513,7 @@ func handleInputFile(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotA
 	resp, err := http.Get(url)
 
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл"))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл."))
 		return
 	}
 
