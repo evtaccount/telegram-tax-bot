@@ -90,20 +90,20 @@ func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	helpText := `ℹ️ Этот бот помогает определить налоговое резидентство на основе загруженных периодов пребывания в разных странах.
 
 📎 С чего начать?
-1. Сформируйте JSON-файл со списком ваших поездок (формат пример — по кнопке "Загрузить файл").
+1. Сформируйте JSON-файл со списком ваших поездок (пример формата можно получить по кнопке «Загрузить файл»).
 2. Отправьте файл через команду /upload_report или с помощью кнопки 📎.
 3. Бот рассчитает, в какой стране вы провели больше всего времени за последний год.
 
-📅 Как задать дату расчета?
-— Выберите "📅 Задать дату" и укажите дату, на которую хотите сделать расчет (например: 15.04.2025).
+📅 Как задать дату расчёта?
+— Нажмите «📅 Задать дату» и укажите день, на который нужен расчёт (например: 15.04.2025).
 
-📊 Что покажет отчет?
-— Страну, в которой вы провели больше всего дней.
+📊 Что покажет отчёт?
+— Страну, где вы провели больше всего дней.
 — Если есть страна с 183+ днями — вы налоговый резидент этой страны.
 
 🔁 Другие функции:
-— /reset: сбросить все данные
-— /periods: показать список загруженных периодов
+— /reset — сбросить все данные
+— /periods — показать список загруженных периодов
 
 💬 Используйте /start для возврата в главное меню.`
 
@@ -135,14 +135,14 @@ func handleSetDateCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi
 	}
 	s.PendingAction = "awaiting_date"
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ"))
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ:"))
 }
 
 func handleUploadCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	s.Data.Current = "upload_pending"
 	s.SaveSession()
 
-	newMsg := tgbotapi.NewMessage(msg.Chat.ID, "📎 Пожалуйста, отправьте JSON-файл как документ.")
+	newMsg := tgbotapi.NewMessage(msg.Chat.ID, "📎 Пришлите JSON-файл документом.")
 	newMsg.ReplyMarkup = keyboard.BuildBackToMenu()
 	bot.Send(newMsg)
 }
@@ -193,7 +193,7 @@ func handleAddGapPeriod(s *model.Session, callback *tgbotapi.CallbackQuery, bot 
 	s.TempEditedIn = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(chatID, "➕ Добавлен период 'unknown'. Дата въезда обновлена."))
+	bot.Send(tgbotapi.NewMessage(chatID, "➕ Добавлен период «unknown». Дата въезда обновлена."))
 	handlePeriodsCommand(s, callback.Message, bot)
 }
 
@@ -218,7 +218,7 @@ func handleAdjustNextIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 	s.TempEditedOut = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Следующий период сдвинут. Дата выезда обновлена."))
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Следующий период сдвинут, дата выезда обновлена."))
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
 }
 
@@ -281,7 +281,7 @@ func handleAddTail(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI
 	s.PendingAction = "awaiting_tail_out"
 	s.SaveSession()
 
-	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.MM.YYYY):")
+	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.ММ.ГГГГ):")
 	replay.ReplyMarkup = keyboard.BuildBackToMenu()
 	bot.Send(replay)
 }
@@ -290,7 +290,7 @@ func handleAddHead(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI
 	s.PendingAction = "awaiting_head_in"
 	s.SaveSession()
 
-	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.MM.YYYY):")
+	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.ММ.ГГГГ):")
 	replay.ReplyMarkup = keyboard.BuildBackToMenu()
 	bot.Send(replay)
 }
@@ -299,7 +299,7 @@ func handleAddFull(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI
 	s.PendingAction = "awaiting_add_in"
 	s.SaveSession()
 
-	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.MM.YYYY):")
+	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.ММ.ГГГГ):")
 	replay.ReplyMarkup = keyboard.BuildBackToMenu()
 	bot.Send(replay)
 }
@@ -310,7 +310,7 @@ func handleEditPeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bot
 	} else {
 		s.PendingAction = "awaiting_edit_index"
 		s.SaveSession()
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✏️ Введите номер периода, который хотите отредактировать:"))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✏️ Введите номер периода для редактирования:"))
 	}
 }
 
@@ -330,14 +330,14 @@ func handleEdinIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI)
 	s.PendingAction = "awaiting_new_in"
 	s.SaveSession()
 	curr := s.Data.Periods[s.EditingIndex].In
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату въезда:", curr)))
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата въезда: %s. Введите новую:", curr)))
 }
 
 func handleEditOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	s.PendingAction = "awaiting_new_out"
 	s.SaveSession()
 	curr := s.Data.Periods[s.EditingIndex].Out
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата %s. Введите новую дату выезда:", curr)))
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата выезда: %s. Введите новую:", curr)))
 }
 
 func handleEditCountry(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
