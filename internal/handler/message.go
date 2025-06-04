@@ -46,6 +46,18 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		return
 	case "awaiting_add_open_country":
 		handleAddOpenCountry(msg, s, r.bot)
+	case "awaiting_tail_out":
+		handleAwaitingTailOut(msg, s, r.bot)
+		return
+	case "awaiting_tail_country":
+		handleAwaitingTailCountry(msg, s, r.bot)
+		return
+	case "awaiting_head_in":
+		handleAwaitingHeadIn(msg, s, r.bot)
+		return
+	case "awaiting_head_country":
+		handleAwaitingHeadCountry(msg, s, r.bot)
+		return
 	case "awaiting_add_in":
 		handleAddin(msg, s, r.bot)
 	}
@@ -354,6 +366,112 @@ func handleAddOpenCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 		Country: country,
 	})
 	s.PendingAction = ""
+	s.SaveSession()
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
+	handlePeriodsCommand(s, msg, bot)
+}
+
+func handleAwaitingTailOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+	date, err := utils.ParseDate(msg.Text)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
+		return
+	}
+
+	s.Temp = []model.Period{{Out: date.Format("02.01.2006")}}
+	s.PendingAction = "awaiting_tail_country"
+	s.SaveSession()
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Укажите название страны:"))
+}
+
+func handleAwaitingTailCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+	country := strings.TrimSpace(msg.Text)
+	if country == "" {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Страна не может быть пустой."))
+		return
+	}
+	if len(s.Temp) == 0 {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка: начните добавление заново."))
+		s.PendingAction = ""
+		return
+	}
+
+	period := s.Temp[0]
+	period.Country = country
+
+	if len(s.Data.Periods) > 0 {
+		first := s.Data.Periods[0]
+		if first.In != "" {
+			firstIn, err := utils.ParseDate(first.In)
+			outDate, errOut := utils.ParseDate(period.Out)
+			if err == nil && errOut == nil && outDate.After(firstIn) {
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Дата выезда не может быть после начала первого периода."))
+				s.PendingAction = ""
+				s.Temp = nil
+				return
+			}
+		}
+	}
+
+	s.Data.Periods = append([]model.Period{period}, s.Data.Periods...)
+	s.PendingAction = ""
+	s.Temp = nil
+	s.SaveSession()
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
+	handlePeriodsCommand(s, msg, bot)
+}
+
+func handleAwaitingHeadIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+	date, err := utils.ParseDate(msg.Text)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
+		return
+	}
+
+	s.Temp = []model.Period{{In: date.Format("02.01.2006")}}
+	s.PendingAction = "awaiting_head_country"
+	s.SaveSession()
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Укажите название страны:"))
+}
+
+func handleAwaitingHeadCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+	country := strings.TrimSpace(msg.Text)
+	if country == "" {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Страна не может быть пустой."))
+		return
+	}
+	if len(s.Temp) == 0 {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка: временный буфер пуст."))
+		s.PendingAction = ""
+		return
+	}
+
+	period := s.Temp[0]
+	period.Country = country
+
+	if len(s.Data.Periods) > 0 {
+		last := s.Data.Periods[len(s.Data.Periods)-1]
+		lastOut := last.Out
+		if lastOut == "" {
+			lastOut = s.Data.Current
+		}
+		newIn, err1 := utils.ParseDate(period.In)
+		lastOutDate, err2 := utils.ParseDate(lastOut)
+		if err1 == nil && err2 == nil && newIn.Before(lastOutDate) {
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Невозможно добавить период: нарушен хронологический порядок."))
+			s.PendingAction = ""
+			s.Temp = nil
+			return
+		}
+	}
+
+	s.Data.Periods = append(s.Data.Periods, period)
+	s.PendingAction = ""
+	s.Temp = nil
 	s.SaveSession()
 
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
