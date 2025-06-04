@@ -46,6 +46,7 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		return
 	case "awaiting_add_open_country":
 		handleAddOpenCountry(msg, s, r.bot)
+		return
 	case "awaiting_tail_out":
 		handleAwaitingTailOut(msg, s, r.bot)
 		return
@@ -60,6 +61,7 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		return
 	case "awaiting_add_in":
 		handleAddin(msg, s, r.bot)
+		return
 	}
 
 	// ✅ Загрузка JSON-файла
