@@ -70,12 +70,22 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	// ✅ Команды
+	// ✅ Команды и кнопки
 	switch {
-	case strings.HasPrefix(text, "/start"):
+	case strings.HasPrefix(text, "/start"), text == "🔙 Назад в меню":
 		handleStartCommand(s, msg, r.bot)
-	case strings.HasPrefix(text, "/help"):
+	case strings.HasPrefix(text, "/help"), text == "ℹ️ Помощь":
 		handleHelpCommand(msg, r.bot)
+	case text == "📎 Загрузить файл", text == "📎 Загрузить новый файл":
+		handleUploadCommand(s, msg, r.bot)
+	case text == "🗑 Сбросить":
+		handleResetCommand(s, msg, r.bot)
+	case text == "📅 Отчёт на заданную дату":
+		handleSetDateCommand(s, msg, r.bot)
+	case text == "📋 Показать текущие данные":
+		handlePeriodsCommand(s, msg, r.bot)
+	case text == "📊 Отчёт":
+		handleShowReport(s, msg, r.bot)
 	default:
 		if strings.HasPrefix(text, "{") {
 			handleJSONInput(msg, s, r.bot)
