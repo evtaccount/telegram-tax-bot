@@ -374,6 +374,7 @@ func formatPeriodList(periods []model.Period, current string) string {
 
 // removeInlineKeyboard clears the inline keyboard from a message without deleting the message itself.
 func removeInlineKeyboard(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
-	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{})
+	empty := tgbotapi.NewInlineKeyboardMarkup()
+	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, empty)
 	_, _ = bot.Request(edit)
 }
