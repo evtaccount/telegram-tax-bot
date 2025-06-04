@@ -358,7 +358,13 @@ func formatPeriodList(periods []model.Period, current string) string {
 		if out == "" {
 			out = "по " + current
 		}
-		builder.WriteString(fmt.Sprintf("%d. %s — %s (%s)\n", i+1, in, out, p.Country))
+		flag := ""
+		if p.Country == "unknown" {
+			flag = "🕳 "
+		} else if code, ok := utils.CountryCodeMap[p.Country]; ok {
+			flag = utils.CountryToFlag(code) + " "
+		}
+		builder.WriteString(fmt.Sprintf("%d. %s — %s (%s%s)\n", i+1, in, out, flag, p.Country))
 	}
 	return builder.String()
 }
