@@ -23,6 +23,81 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 	s := manager.GetSession(userID)
 	text := msg.Text
 
+	// ✅ Загрузка JSON-файла
+	if msg.Document != nil && s.Data.Current == "upload_pending" {
+		handleInputFile(msg, s, r.bot)
+		return
+	}
+
+	// ✅ Команды и кнопки имеют приоритет над ожидаемыми действиями
+	switch {
+	case strings.HasPrefix(text, "/start"), text == "🔙 Назад в меню":
+		handleStartCommand(s, msg, r.bot)
+		return
+	case strings.HasPrefix(text, "/help"), text == "ℹ️ Помощь":
+		handleHelpCommand(msg, r.bot)
+		return
+	case text == "📎 Загрузить файл", text == "📎 Загрузить новый файл":
+		handleUploadCommand(s, msg, r.bot)
+		return
+	case text == "🗑 Сбросить":
+		handleResetCommand(s, msg, r.bot)
+		return
+	case text == "📅 Отчёт на заданную дату":
+		handleSetDateCommand(s, msg, r.bot)
+		return
+	case text == "📋 Показать текущие данные":
+		handlePeriodsCommand(s, msg, r.bot)
+		return
+	case text == "📊 Отчёт":
+		handleShowReport(s, msg, r.bot)
+		return
+	case text == "✏️ Отредактировать период":
+		handleEditPeriod(s, msg, r.bot)
+		return
+	case text == "➕ Добавить период":
+		handleAddPeriod(msg, r.bot)
+		return
+	case text == "🗑 Удалить период":
+		// TODO: implement delete
+		return
+	case text == "📅 Изменить дату въезда (in)":
+		handleEdinIn(s, msg, r.bot)
+		return
+	case text == "📆 Изменить дату выезда (out)":
+		handleEditOut(s, msg, r.bot)
+		return
+	case text == "🌍 Изменить страну":
+		handleEditCountry(s, msg, r.bot)
+		return
+	case text == "🗓 Хвостовой (только выезд)":
+		handleAddTail(s, msg, r.bot)
+		return
+	case text == "⏮ Начальный (только въезд)":
+		handleAddHead(s, msg, r.bot)
+		return
+	case text == "📄 Полный (въезд+выезд)":
+		handleAddFull(s, msg, r.bot)
+		return
+	case text == "📌 Подвинуть предыдущий период":
+		handleAdjustPrevOut(s, msg, r.bot)
+		return
+	case text == "📌 Подвинуть следующий период":
+		handleAdjustNextIn(s, msg, r.bot)
+		return
+	case text == "✅ Оставить как есть":
+		handleKeepConflict(s, msg, r.bot)
+		return
+	case text == "❌ Отменить":
+		if strings.HasPrefix(s.PendingAction, "resolve_") {
+			handleCancelEdit(s, msg, r.bot)
+		} else {
+			handleStartCommand(s, msg, r.bot)
+		}
+		return
+	}
+
+	// ✅ Ожидаемые действия
 	switch s.PendingAction {
 	case "awaiting_edit_index":
 		handleAwaitingEditIndex(msg, s, r.bot)
@@ -65,64 +140,10 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	// ✅ Загрузка JSON-файла
-	if msg.Document != nil && s.Data.Current == "upload_pending" {
-		handleInputFile(msg, s, r.bot)
-		return
-	}
-
-	// ✅ Команды и кнопки
-	switch {
-	case strings.HasPrefix(text, "/start"), text == "🔙 Назад в меню":
-		handleStartCommand(s, msg, r.bot)
-	case strings.HasPrefix(text, "/help"), text == "ℹ️ Помощь":
-		handleHelpCommand(msg, r.bot)
-	case text == "📎 Загрузить файл", text == "📎 Загрузить новый файл":
-		handleUploadCommand(s, msg, r.bot)
-	case text == "🗑 Сбросить":
-		handleResetCommand(s, msg, r.bot)
-	case text == "📅 Отчёт на заданную дату":
-		handleSetDateCommand(s, msg, r.bot)
-	case text == "📋 Показать текущие данные":
-		handlePeriodsCommand(s, msg, r.bot)
-	case text == "📊 Отчёт":
-		handleShowReport(s, msg, r.bot)
-	case text == "✏️ Отредактировать период":
-		handleEditPeriod(s, msg, r.bot)
-	case text == "➕ Добавить период":
-		handleAddPeriod(msg, r.bot)
-	case text == "🗑 Удалить период":
-		// TODO: implement delete
-	case text == "📅 Изменить дату въезда (in)":
-		handleEdinIn(s, msg, r.bot)
-	case text == "📆 Изменить дату выезда (out)":
-		handleEditOut(s, msg, r.bot)
-	case text == "🌍 Изменить страну":
-		handleEditCountry(s, msg, r.bot)
-	case text == "🗓 Хвостовой (только выезд)":
-		handleAddTail(s, msg, r.bot)
-	case text == "⏮ Начальный (только въезд)":
-		handleAddHead(s, msg, r.bot)
-	case text == "📄 Полный (въезд+выезд)":
-		handleAddFull(s, msg, r.bot)
-	case text == "📌 Подвинуть предыдущий период":
-		handleAdjustPrevOut(s, msg, r.bot)
-	case text == "📌 Подвинуть следующий период":
-		handleAdjustNextIn(s, msg, r.bot)
-	case text == "✅ Оставить как есть":
-		handleKeepConflict(s, msg, r.bot)
-	case text == "❌ Отменить":
-		if strings.HasPrefix(s.PendingAction, "resolve_") {
-			handleCancelEdit(s, msg, r.bot)
-		} else {
-			handleStartCommand(s, msg, r.bot)
-		}
-	default:
-		if strings.HasPrefix(text, "{") {
-			handleJSONInput(msg, s, r.bot)
-		} else {
-			r.bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help, чтобы посмотреть список."))
-		}
+	if strings.HasPrefix(text, "{") {
+		handleJSONInput(msg, s, r.bot)
+	} else {
+		r.bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help, чтобы посмотреть список."))
 	}
 }
 
