@@ -18,7 +18,7 @@ func TestIsEmpty(t *testing.T) {
 
 func TestBuildPeriodsList(t *testing.T) {
 	s := &Session{Data: Data{Current: "01.01.2024", Periods: []Period{{In: "01.01.2024", Country: "Россия"}}}}
-	expected := "📋 Список периодов:\n\n1. 01.01.2024 — по 01.01.2024 (🇷🇺 Россия)\n"
+	expected := "📋 Список периодов:\n\n1. 🇷🇺 Россия (01.01.2024 — по 01.01.2024)\n"
 	if list := s.BuildPeriodsList(); list != expected {
 		t.Fatalf("unexpected list: %s", list)
 	}

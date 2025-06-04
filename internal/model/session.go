@@ -65,7 +65,7 @@ func (s *Session) BuildPeriodsList() string {
 		} else if code, ok := utils.CountryCodeMap[p.Country]; ok {
 			flag = utils.CountryToFlag(code) + " "
 		}
-		builder.WriteString(fmt.Sprintf("%d. %s — %s (%s%s)\n", i+1, in, out, flag, p.Country))
+		builder.WriteString(fmt.Sprintf("%d. %s%s (%s — %s)\n", i+1, flag, p.Country, in, out))
 	}
 	return builder.String()
 }
