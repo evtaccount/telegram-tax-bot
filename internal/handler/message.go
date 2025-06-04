@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"telegram-tax-bot/internal/keyboard"
 	"telegram-tax-bot/internal/manager"
 	"telegram-tax-bot/internal/model"
 	"telegram-tax-bot/internal/utils"
@@ -86,6 +87,36 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		handlePeriodsCommand(s, msg, r.bot)
 	case text == "📊 Отчёт":
 		handleShowReport(s, msg, r.bot)
+	case text == "✏️ Отредактировать период":
+		handleEditPeriod(s, msg, r.bot)
+	case text == "➕ Добавить период":
+		handleAddPeriod(msg, r.bot)
+	case text == "🗑 Удалить период":
+		// TODO: implement delete
+	case text == "📅 Изменить дату въезда (in)":
+		handleEdinIn(s, msg, r.bot)
+	case text == "📆 Изменить дату выезда (out)":
+		handleEditOut(s, msg, r.bot)
+	case text == "🌍 Изменить страну":
+		handleEditCountry(s, msg, r.bot)
+	case text == "🗓 Хвостовой (только выезд)":
+		handleAddTail(s, msg, r.bot)
+	case text == "⏮ Начальный (только въезд)":
+		handleAddHead(s, msg, r.bot)
+	case text == "📄 Полный (въезд+выезд)":
+		handleAddFull(s, msg, r.bot)
+	case text == "📌 Подвинуть предыдущий период":
+		handleAdjustPrevOut(s, msg, r.bot)
+	case text == "📌 Подвинуть следующий период":
+		handleAdjustNextIn(s, msg, r.bot)
+	case text == "✅ Оставить как есть":
+		handleKeepConflict(s, msg, r.bot)
+	case text == "❌ Отменить":
+		if strings.HasPrefix(s.PendingAction, "resolve_") {
+			handleCancelEdit(s, msg, r.bot)
+		} else {
+			handleStartCommand(s, msg, r.bot)
+		}
 	default:
 		if strings.HasPrefix(text, "{") {
 			handleJSONInput(msg, s, r.bot)
@@ -107,17 +138,7 @@ func handleAwaitingEditIndex(msg *tgbotapi.Message, s *model.Session, bot *tgbot
 	s.PendingAction = "awaiting_edit_field"
 	s.SaveSession()
 
-	buttons := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📅 Изменить дату въезда (in)", "edit_in"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📆 Изменить дату выезда (out)", "edit_out"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🌍 Изменить страну", "edit_country"),
-		),
-	)
+	buttons := keyboard.BuildEditFieldMenu()
 	from := s.Data.Periods[s.EditingIndex].In
 	till := s.Data.Periods[s.EditingIndex].Out
 	msgText := fmt.Sprintf("Выбран период с %s по %s. Что изменить?", from, till)
@@ -175,11 +196,7 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 
 				text := fmt.Sprintf("⚠️ Новая дата въезда пересекается с предыдущим периодом (%s). Что сделать?",
 					utils.FormatDate(prevOut))
-				markup := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
-				)
+				markup := keyboard.BuildResolveOptions("📌 Подвинуть предыдущий период")
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
 				msg.ReplyMarkup = markup
 				bot.Send(msg)
@@ -193,11 +210,7 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 
 				text := fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?",
 					utils.FormatDate(prevOut.AddDate(0, 0, 1)), utils.FormatDate(newDate))
-				markup := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть предыдущий период", "adjust_prev_out")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
-				)
+				markup := keyboard.BuildResolveOptions("📌 Подвинуть предыдущий период")
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
 				msg.ReplyMarkup = markup
 				bot.Send(msg)
@@ -249,11 +262,7 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 
 				text := fmt.Sprintf("⚠️ Новая дата выезда пересекается со следующим периодом (%s). Что сделать?",
 					utils.FormatDate(nextIn))
-				markup := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть следующий период", "adjust_next_in")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
-				)
+				markup := keyboard.BuildResolveOptions("📌 Подвинуть следующий период")
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
 				msg.ReplyMarkup = markup
 				bot.Send(msg)
@@ -266,11 +275,7 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 
 				text := fmt.Sprintf("⚠️ Между %s и %s образовался разрыв. Что сделать?",
 					utils.FormatDate(newDate.AddDate(0, 0, 1)), utils.FormatDate(nextIn))
-				markup := tgbotapi.NewInlineKeyboardMarkup(
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📌 Подвинуть следующий период", "adjust_next_in")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✅ Оставить как есть", "keep_conflict")),
-					tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "cancel_edit")),
-				)
+				markup := keyboard.BuildResolveOptions("📌 Подвинуть следующий период")
 				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
 				msg.ReplyMarkup = markup
 				bot.Send(msg)

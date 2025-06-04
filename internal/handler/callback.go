@@ -157,13 +157,7 @@ func handlePeriodsCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi
 	}
 	msgText := s.BuildPeriodsList()
 	newMsg := tgbotapi.NewMessage(msg.Chat.ID, msgText)
-	newMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✏️ Отредактировать период", "edit_period")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➕ Добавить период", "add_period")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить период", "delete_period")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📊 Отчёт", "show_report")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "start")),
-	)
+	newMsg.ReplyMarkup = keyboard.BuildPeriodsMenu()
 	bot.Send(newMsg)
 }
 
@@ -263,20 +257,7 @@ func handleShowReport(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bot
 func handleAddPeriod(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	// меню выбора варианта добавления
 	reply := tgbotapi.NewMessage(msg.Chat.ID, "➕ Что добавить?")
-	reply.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗓 Хвостовой (только выезд)", "add_tail"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⏮ Начальный (только въезд)", "add_head"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📄 Полный (въезд+выезд)", "add_full"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "start"),
-		),
-	)
+	reply.ReplyMarkup = keyboard.BuildAddPeriodMenu()
 	bot.Send(reply)
 }
 
@@ -378,7 +359,5 @@ func removeInlineKeyboard(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
 	// already edited. We try to clear the markup and silently ignore any
 	// failure. Previously the message was deleted on failure, but that lead
 	// to losing the user's history. Now we simply ignore the error.
-	empty := tgbotapi.NewInlineKeyboardMarkup()
-	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, empty)
-	_, _ = bot.Request(edit)
+	// No inline keyboards are used anymore, so nothing to remove.
 }
