@@ -1,8 +1,6 @@
 package bot
 
 import (
-	"log"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -17,7 +15,6 @@ func New(token string) (*Bot, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("🟢 Бот запущен как @%s", api.Self.UserName)
 
 	api.Debug = false
 	return &Bot{API: api}, nil
