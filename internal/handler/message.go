@@ -94,6 +94,9 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 	case text == "❌ Отменить":
 		if strings.HasPrefix(s.PendingAction, "resolve_") {
 			handleCancelEdit(s, msg, r.bot)
+		} else if s.PendingAction == "" {
+			// Отмена выбора действия во время просмотра списка периодов
+			handlePeriodsCommand(s, msg, r.bot)
 		} else {
 			handleStartCommand(s, msg, r.bot)
 		}
