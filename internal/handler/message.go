@@ -62,7 +62,7 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		handleAddPeriod(msg, r.bot)
 		return
 	case text == "🗑 Удалить период":
-		// TODO: implement delete
+		handleDeletePeriod(s, msg, r.bot)
 		return
 	case text == "📅 Изменить дату въезда (in)":
 		handleEdinIn(s, msg, r.bot)
@@ -140,6 +140,9 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 		return
 	case "awaiting_head_country":
 		handleAwaitingHeadCountry(msg, s, r.bot)
+		return
+	case "awaiting_delete_index":
+		handleAwaitingDeleteIndex(msg, s, r.bot)
 		return
 	case "awaiting_add_in":
 		handleAddin(msg, s, r.bot)
