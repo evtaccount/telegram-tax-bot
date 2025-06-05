@@ -17,6 +17,16 @@ func New(token string) (*Bot, error) {
 	}
 
 	api.Debug = false
+	// set command menu similar to BotFather
+	commands := []tgbotapi.BotCommand{
+		{Command: "start", Description: "главное меню"},
+		{Command: "help", Description: "справка"},
+		{Command: "upload_report", Description: "загрузить данные"},
+		{Command: "periods", Description: "показать периоды"},
+		{Command: "reset", Description: "сбросить данные"},
+		{Command: "commands", Description: "список команд"},
+	}
+	_, _ = api.Request(tgbotapi.NewSetMyCommands(commands...))
 	return &Bot{API: api}, nil
 }
 

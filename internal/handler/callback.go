@@ -116,6 +116,17 @@ func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	bot.Send(newMsg)
 }
 
+func handleCommandsCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	txt := `/start - главное меню
+/help - справка
+/upload_report - загрузить данные
+/periods - показать периоды
+/reset - сбросить данные`
+	newMsg := tgbotapi.NewMessage(msg.Chat.ID, txt)
+	newMsg.ReplyMarkup = keyboard.BuildBackToMenu()
+	bot.Send(newMsg)
+}
+
 func handleResetCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	if s.IsEmpty() {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
