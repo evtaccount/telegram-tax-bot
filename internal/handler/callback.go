@@ -157,13 +157,7 @@ func handlePeriodsCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi
 	}
 	msgText := s.BuildPeriodsList()
 	newMsg := tgbotapi.NewMessage(msg.Chat.ID, msgText)
-	newMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("✏️ Отредактировать период", "edit_period")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("➕ Добавить период", "add_period")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить период", "delete_period")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("📊 Отчёт", "show_report")),
-		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "start")),
-	)
+	newMsg.ReplyMarkup = keyboard.BuildPeriodsMenu()
 	bot.Send(newMsg)
 }
 
@@ -222,7 +216,7 @@ func handleAdjustNextIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 	s.SaveSession()
 
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Следующий период сдвинут, дата выезда обновлена."))
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleKeepConflict(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -241,7 +235,7 @@ func handleKeepConflict(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 		return
 	}
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleCancelEdit(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -250,7 +244,31 @@ func handleCancelEdit(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bot
 	s.SaveSession()
 
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Изменение отменено."))
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, formatPeriodList(s.Data.Periods, s.Data.Current)))
+	handlePeriodsCommand(s, msg, bot)
+}
+
+// handleBack cancels the current step and shows the appropriate menu.
+func handleBack(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	switch s.PendingAction {
+	case "awaiting_edit_index":
+		s.PendingAction = ""
+		s.SaveSession()
+		handlePeriodsCommand(s, msg, bot)
+	case "awaiting_edit_field":
+		handleEditPeriod(s, msg, bot)
+	case "awaiting_new_in", "awaiting_new_out", "awaiting_new_country":
+		s.PendingAction = "awaiting_edit_field"
+		s.SaveSession()
+		buttons := keyboard.BuildEditFieldMenu()
+		from := s.Data.Periods[s.EditingIndex].In
+		till := s.Data.Periods[s.EditingIndex].Out
+		txt := fmt.Sprintf("Выбран период с %s по %s. Что изменить?", from, till)
+		reply := tgbotapi.NewMessage(msg.Chat.ID, txt)
+		reply.ReplyMarkup = buttons
+		bot.Send(reply)
+	default:
+		handleStartCommand(s, msg, bot)
+	}
 }
 
 func handleShowReport(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -263,20 +281,7 @@ func handleShowReport(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bot
 func handleAddPeriod(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	// меню выбора варианта добавления
 	reply := tgbotapi.NewMessage(msg.Chat.ID, "➕ Что добавить?")
-	reply.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗓 Хвостовой (только выезд)", "add_tail"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⏮ Начальный (только въезд)", "add_head"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📄 Полный (въезд+выезд)", "add_full"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить", "start"),
-		),
-	)
+	reply.ReplyMarkup = keyboard.BuildAddPeriodMenu()
 	bot.Send(reply)
 }
 
@@ -310,11 +315,16 @@ func handleAddFull(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI
 func handleEditPeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	if s.IsEmpty() {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для редактирования."))
-	} else {
-		s.PendingAction = "awaiting_edit_index"
-		s.SaveSession()
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✏️ Введите номер периода для редактирования:"))
+		return
 	}
+
+	s.PendingAction = "awaiting_edit_index"
+	s.SaveSession()
+
+	text := s.BuildPeriodsList() + "\n✏️ Введите номер периода для редактирования:"
+	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
+	reply.ReplyMarkup = keyboard.BuildBack()
+	bot.Send(reply)
 }
 
 func handleAdjustPrevOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
@@ -327,26 +337,33 @@ func handleAdjustPrevOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.
 	s.SaveSession()
 
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
+	handlePeriodsCommand(s, msg, bot)
 }
 
 func handleEdinIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	s.PendingAction = "awaiting_new_in"
 	s.SaveSession()
 	curr := s.Data.Periods[s.EditingIndex].In
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата въезда: %s. Введите новую:", curr)))
+	reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата въезда: %s. Введите новую:", curr))
+	reply.ReplyMarkup = keyboard.BuildBack()
+	bot.Send(reply)
 }
 
 func handleEditOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	s.PendingAction = "awaiting_new_out"
 	s.SaveSession()
 	curr := s.Data.Periods[s.EditingIndex].Out
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата выезда: %s. Введите новую:", curr)))
+	reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата выезда: %s. Введите новую:", curr))
+	reply.ReplyMarkup = keyboard.BuildBack()
+	bot.Send(reply)
 }
 
 func handleEditCountry(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 	s.PendingAction = "awaiting_new_country"
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Введите новое название страны:"))
+	reply := tgbotapi.NewMessage(msg.Chat.ID, "🌍 Введите новое название страны:")
+	reply.ReplyMarkup = keyboard.BuildBack()
+	bot.Send(reply)
 }
 
 func formatPeriodList(periods []model.Period, current string) string {
@@ -378,7 +395,5 @@ func removeInlineKeyboard(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
 	// already edited. We try to clear the markup and silently ignore any
 	// failure. Previously the message was deleted on failure, but that lead
 	// to losing the user's history. Now we simply ignore the error.
-	empty := tgbotapi.NewInlineKeyboardMarkup()
-	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, empty)
-	_, _ = bot.Request(edit)
+	// No inline keyboards are used anymore, so nothing to remove.
 }
