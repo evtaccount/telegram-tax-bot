@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"telegram-tax-bot/internal/keyboard"
 	"telegram-tax-bot/internal/manager"
@@ -254,6 +255,10 @@ func handleBack(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 		s.PendingAction = ""
 		s.SaveSession()
 		handlePeriodsCommand(s, msg, bot)
+	case "awaiting_delete_index":
+		s.PendingAction = ""
+		s.SaveSession()
+		handlePeriodsCommand(s, msg, bot)
 	case "awaiting_edit_field":
 		handleEditPeriod(s, msg, bot)
 	case "awaiting_new_in", "awaiting_new_out", "awaiting_new_country":
@@ -364,6 +369,41 @@ func handleEditCountry(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bo
 	reply := tgbotapi.NewMessage(msg.Chat.ID, "🌍 Введите новое название страны:")
 	reply.ReplyMarkup = keyboard.BuildBack()
 	bot.Send(reply)
+}
+
+func handleDeletePeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+	if s.IsEmpty() {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для удаления."))
+		return
+	}
+
+	s.PendingAction = "awaiting_delete_index"
+	s.SaveSession()
+
+	text := s.BuildPeriodsList() + "\n🗑 Введите номер периода для удаления:"
+	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
+	reply.ReplyMarkup = keyboard.BuildBack()
+	bot.Send(reply)
+}
+
+func handleAwaitingDeleteIndex(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+	index, err := strconv.Atoi(strings.TrimSpace(msg.Text))
+	if err != nil || index < 1 || index > len(s.Data.Periods) {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Введите корректный номер периода."))
+		return
+	}
+
+	idx := index - 1
+	s.Data.Periods = append(s.Data.Periods[:idx], s.Data.Periods[idx+1:]...)
+	s.PendingAction = ""
+	s.SaveSession()
+
+	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🗑 Период удалён."))
+	if s.IsEmpty() {
+		handleStartCommand(s, msg, bot)
+	} else {
+		handlePeriodsCommand(s, msg, bot)
+	}
 }
 
 func formatPeriodList(periods []model.Period, current string) string {
