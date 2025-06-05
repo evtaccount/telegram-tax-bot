@@ -34,6 +34,7 @@ func BuildMainMenu(s *model.Session) tgbotapi.ReplyKeyboardMarkup {
 		rows = [][]tgbotapi.KeyboardButton{
 			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("📎 Загрузить файл")),
 			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("ℹ️ Помощь")),
+			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("📖 Команды")),
 		}
 	} else {
 		rows = [][]tgbotapi.KeyboardButton{
@@ -43,6 +44,7 @@ func BuildMainMenu(s *model.Session) tgbotapi.ReplyKeyboardMarkup {
 			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("📎 Загрузить новый файл")),
 			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("🗑 Сбросить")),
 			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("ℹ️ Помощь")),
+			tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("📖 Команды")),
 		}
 	}
 

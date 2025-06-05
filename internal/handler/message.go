@@ -40,11 +40,20 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 	case strings.HasPrefix(text, "/help"), text == "ℹ️ Помощь":
 		handleHelpCommand(msg, r.bot)
 		return
+	case strings.HasPrefix(text, "/commands"), text == "📖 Команды":
+		handleCommandsCommand(msg, r.bot)
+		return
 	case text == "📎 Загрузить файл", text == "📎 Загрузить новый файл":
 		handleUploadCommand(s, msg, r.bot)
 		return
-	case text == "🗑 Сбросить":
+	case strings.HasPrefix(text, "/upload_report"):
+		handleUploadCommand(s, msg, r.bot)
+		return
+	case text == "🗑 Сбросить", strings.HasPrefix(text, "/reset"):
 		handleResetCommand(s, msg, r.bot)
+		return
+	case strings.HasPrefix(text, "/periods"):
+		handlePeriodsCommand(s, msg, r.bot)
 		return
 	case text == "📅 Отчёт на заданную дату":
 		handleSetDateCommand(s, msg, r.bot)
