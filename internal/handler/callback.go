@@ -20,6 +20,8 @@ import (
 func (r *Registry) handleCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
 	userID := callback.From.ID
 	session := manager.GetSession(userID)
+	session.Mu.Lock()
+	defer session.Mu.Unlock()
 	data := callback.Data
 
 	msg := callback.Message.Message
@@ -168,7 +170,7 @@ func handleSetDateCommand(ctx context.Context, s *model.Session, msg *models.Mes
 }
 
 func handleUploadCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
-	s.Data.Current = "upload_pending"
+	s.PendingAction = "awaiting_upload"
 	s.SaveSession()
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
@@ -249,17 +251,20 @@ func handleAdjustNextIn(ctx context.Context, s *model.Session, msg *models.Messa
 }
 
 func handleKeepConflict(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
-	if s.PendingAction == "confirm_conflict_in" {
+	switch s.PendingAction {
+	case "resolve_in_conflict", "resolve_in_gap":
 		s.Data.Periods[s.EditingIndex].In = s.TempEditedIn
+		s.TempEditedIn = ""
 		s.PendingAction = ""
 		s.SaveSession()
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Дата въезда обновлена."})
-	} else if s.PendingAction == "confirm_conflict_out" {
+	case "resolve_out_conflict", "resolve_out_gap":
 		s.Data.Periods[s.EditingIndex].Out = s.TempEditedOut
+		s.TempEditedOut = ""
 		s.PendingAction = ""
 		s.SaveSession()
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Дата выезда обновлена."})
-	} else {
+	default:
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Нет ожидаемого конфликта."})
 		return
 	}
@@ -269,6 +274,7 @@ func handleKeepConflict(ctx context.Context, s *model.Session, msg *models.Messa
 
 func handleCancelEdit(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = ""
+	s.TempEditedIn = ""
 	s.TempEditedOut = ""
 	s.SaveSession()
 
@@ -372,7 +378,7 @@ func handleEditPeriod(ctx context.Context, s *model.Session, msg *models.Message
 func handleAdjustPrevOut(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	newIn, _ := utils.ParseDate(s.TempEditedIn)
 
-	s.Data.Periods[s.EditingIndex-1].Out = newIn.Format("02.01.2006")
+	s.Data.Periods[s.EditingIndex-1].Out = newIn.AddDate(0, 0, -1).Format("02.01.2006")
 	s.Data.Periods[s.EditingIndex].In = newIn.Format("02.01.2006")
 	s.PendingAction = ""
 	s.TempEditedIn = ""
@@ -449,29 +455,6 @@ func handleAwaitingDeleteIndex(ctx context.Context, msg *models.Message, s *mode
 	} else {
 		handlePeriodsCommand(ctx, s, msg, b)
 	}
-}
-
-func formatPeriodList(periods []model.Period, current string) string {
-	var builder strings.Builder
-	builder.WriteString("📋 Список периодов:\n\n")
-	for i, p := range periods {
-		in := p.In
-		if in == "" {
-			in = "—"
-		}
-		out := p.Out
-		if out == "" {
-			out = "по " + current
-		}
-		flag := ""
-		if p.Country == "unknown" {
-			flag = "🕳 "
-		} else if code, ok := utils.CountryCodeMap[p.Country]; ok {
-			flag = utils.CountryToFlag(code) + " "
-		}
-		builder.WriteString(fmt.Sprintf("%d. %s%s (%s — %s)\n", i+1, flag, p.Country, in, out))
-	}
-	return builder.String()
 }
 
 // removeInlineKeyboard clears the inline keyboard from a message without deleting the message itself.

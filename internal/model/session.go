@@ -6,10 +6,12 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"telegram-tax-bot/internal/utils"
 )
 
 type Session struct {
+	Mu            sync.Mutex `json:"-"`
 	UserID        int64
 	Data          Data
 	Backup        Data
@@ -46,12 +48,20 @@ func (s *Session) SaveSession() {
 
 func (s *Session) LoadUserData() {
 	path := fmt.Sprintf("%s/session.json", s.HistoryDir)
-	b, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path)
 
 	if err == nil {
 		var restored Session
-		if err := json.Unmarshal(b, &restored); err == nil {
-			*s = restored
+		if err := json.Unmarshal(raw, &restored); err == nil {
+			s.UserID = restored.UserID
+			s.Data = restored.Data
+			s.Backup = restored.Backup
+			s.HistoryDir = restored.HistoryDir
+			s.Temp = restored.Temp
+			s.EditingIndex = restored.EditingIndex
+			s.PendingAction = restored.PendingAction
+			s.TempEditedIn = restored.TempEditedIn
+			s.TempEditedOut = restored.TempEditedOut
 		}
 	}
 }
