@@ -10,7 +10,10 @@ import (
 )
 
 func BuildReport(data model.Data) string {
-	calcDate, _ := utils.ParseDate(data.Current)
+	calcDate, err := utils.ParseDate(data.Current)
+	if err != nil {
+		return "⛔ Ошибка: не задана или некорректна дата расчёта. Установите дату через меню."
+	}
 	oneYearAgo := calcDate.AddDate(-1, 0, 0).AddDate(0, 0, 1)
 	countryDays := make(map[string]int)
 	var previousOutDate time.Time

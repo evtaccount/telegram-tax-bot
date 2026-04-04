@@ -23,10 +23,12 @@ import (
 func (r *Registry) handleMessage(ctx context.Context, b *bot.Bot, msg *models.Message) {
 	userID := msg.From.ID
 	s := manager.GetSession(userID)
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	text := msg.Text
 
 	// ✅ Загрузка JSON-файла
-	if msg.Document != nil && s.Data.Current == "upload_pending" {
+	if msg.Document != nil && s.PendingAction == "awaiting_upload" {
 		handleInputFile(ctx, msg, s, b)
 		return
 	}
@@ -576,7 +578,8 @@ func handleInputFile(ctx context.Context, msg *models.Message, s *model.Session,
 		return
 	}
 	url := b.FileDownloadLink(file)
-	resp, err := http.Get(url)
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Не удалось загрузить файл."})
 		return
@@ -586,6 +589,6 @@ func handleInputFile(ctx context.Context, msg *models.Message, s *model.Session,
 	_ = resp.Body.Close()
 
 	msg.Text = string(body)
-	s.Data.Current = "" // сбрасываем флаг после загрузки
+	s.PendingAction = ""
 	handleJSONInput(ctx, msg, s, b)
 }
