@@ -442,9 +442,10 @@ func formatPeriodList(periods []model.Period, current string) string {
 
 // removeInlineKeyboard clears the inline keyboard from a message without deleting the message itself.
 func removeInlineKeyboard(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
-	// Telegram may return an error if the original message is too old or was
-	// already edited. We try to clear the markup and silently ignore any
-	// failure. Previously the message was deleted on failure, but that lead
-	// to losing the user's history. Now we simply ignore the error.
-	// No inline keyboards are used anymore, so nothing to remove.
+	empty := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{},
+	})
+	// Telegram may return an error if the message is too old or was already
+	// edited — silently ignore to avoid losing the user's message history.
+	bot.Send(empty)
 }

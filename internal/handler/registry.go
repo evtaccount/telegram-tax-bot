@@ -8,11 +8,11 @@ import (
 
 type Registry struct {
 	bot *tgbotapi.BotAPI
-	ust *user_storage.UserStorate
+	ust *user_storage.UserStorage
 }
 
 // Register binds message/​callback handling and spawns update loop.
-func Register(api *tgbotapi.BotAPI, ust *user_storage.UserStorate) {
+func Register(api *tgbotapi.BotAPI, ust *user_storage.UserStorage) {
 	r := &Registry{bot: api, ust: ust}
 	go r.listen() // background
 }
