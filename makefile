@@ -1,29 +1,80 @@
-# Makefile для управления ботом в Docker
+# ─── Configuration ───────────────────────────────────────────
+REMOTE_HOST   := 206.168.212.122
+REMOTE_USER   := evt_tunnel
+REMOTE_PORT   := 12420
+SSH_KEY       := $(HOME)/.ssh/vpn_key
+REMOTE_DIR    := /home/evt_tunnel/telegram-tax-bot
+BRANCH        ?= master
+SERVICE       := tax-bot
 
-IMAGE_NAME := telegram-tax-bot
-SERVICE := tax-bot
+SSH_CMD := ssh -i $(SSH_KEY) -p $(REMOTE_PORT) $(REMOTE_USER)@$(REMOTE_HOST)
+
+# ─── Local ───────────────────────────────────────────────────
+
+.PHONY: build test vet run clean
 
 build:
-	docker-compose build --no-cache
+	CGO_ENABLED=0 go build -o bot ./cmd/bot
 
-up:
-	docker-compose up -d
+test:
+	go test ./...
 
-down:
-	docker-compose down
+vet:
+	go vet ./...
 
-rebuild: down build up
+run: build
+	./bot
 
-logs:
+clean:
+	rm -f bot
+
+# ─── Docker (local) ─────────────────────────────────────────
+
+.PHONY: docker-build docker-up docker-down docker-rebuild docker-logs
+
+docker-build:
+	docker compose build --no-cache
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-rebuild: docker-down docker-build docker-up
+
+docker-logs:
 	docker logs -f $(SERVICE)
+
+# ─── Deploy ──────────────────────────────────────────────────
+
+.PHONY: deploy deploy-quick ssh status logs-remote
+
+deploy:
+	@echo ">> Deploying $(BRANCH) to $(REMOTE_HOST)..."
+	$(SSH_CMD) 'cd $(REMOTE_DIR) && git fetch origin && git checkout $(BRANCH) && git pull origin $(BRANCH) && docker compose up --build -d && docker image prune -f && docker compose ps'
+	@echo ">> Deploy complete!"
+
+deploy-quick:
+	@echo ">> Quick deploy (restart without rebuild)..."
+	$(SSH_CMD) 'cd $(REMOTE_DIR) && git pull origin $(BRANCH) && docker compose up -d && docker compose ps'
+
+ssh:
+	$(SSH_CMD)
+
+status:
+	$(SSH_CMD) 'cd $(REMOTE_DIR) && docker compose ps'
+
+logs-remote:
+	$(SSH_CMD) 'cd $(REMOTE_DIR) && docker compose logs --tail=50 $(SERVICE)'
+
+# ─── Cleanup ─────────────────────────────────────────────────
+
+.PHONY: reset cleanup
 
 reset:
 	rm -rf data/* logs/*
 
 cleanup:
-	docker stack rm telegram-tax-bot || true
-	docker-compose down || true
-	docker rm -f $(shell docker ps -aq) || true
-	docker rmi telegram-tax-bot telegram-tax-bot-tax-bot || true
+	docker compose down || true
 	docker image prune -f
-	docker network rm telegram-tax-bot_default || true
