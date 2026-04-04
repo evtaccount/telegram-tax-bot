@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -109,15 +111,16 @@ func handleHelpCommand(ctx context.Context, msg *models.Message, b *bot.Bot) {
 3. Бот рассчитает, в какой стране вы провели больше всего времени за последний год.
 
 📅 Как задать дату расчёта?
-— Нажмите «📅 Задать дату» и укажите день, на который нужен расчёт (например: 15.04.2025).
+— Нажмите «📅 Отчёт на заданную дату» и укажите день, на который нужен расчёт (например: 15.04.2025).
 
 📊 Что покажет отчёт?
-— Страну, где вы провели больше всего дней.
+— Страну, где вы провели больше всего дней, с разбивкой по периодам.
 — Если есть страна с 183+ днями — вы налоговый резидент этой страны.
 
 🔁 Другие функции:
 — /reset — сбросить все данные
 — /periods — показать список загруженных периодов
+— 📤 Экспорт — скачать данные в JSON-файл
 
 💬 Используйте /start для возврата в главное меню.`
 
@@ -146,16 +149,27 @@ func handleResetCommand(ctx context.Context, s *model.Session, msg *models.Messa
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 У вас пока нет сохранённых периодов."})
 		return
 	}
+	s.PendingAction = "awaiting_reset_confirm"
+	s.SaveSession()
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "⚠️ Вы уверены? Все данные будут удалены.",
+		ReplyMarkup: keyboard.BuildConfirm(),
+	})
+}
+
+func handleResetConfirmed(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.Data = model.Data{}
 	s.Backup = model.Data{}
 	s.Temp = nil
+	s.PendingAction = ""
 	_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
 	s.SaveSession()
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
 		Text:        "✅ Данные сброшены.",
-		ReplyMarkup: keyboard.BuildBackToMenu(),
+		ReplyMarkup: keyboard.BuildMainMenu(s),
 	})
 }
 
@@ -182,7 +196,11 @@ func handleUploadCommand(ctx context.Context, s *model.Session, msg *models.Mess
 
 func handlePeriodsCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.IsEmpty() {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 У вас пока нет сохранённых периодов."})
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      msg.Chat.ID,
+			Text:        "📭 У вас пока нет данных.\n\nЗагрузите JSON-файл с периодами или добавьте их вручную.",
+			ReplyMarkup: keyboard.BuildMainMenu(s),
+		})
 		return
 	}
 	b.SendMessage(ctx, &bot.SendMessageParams{
@@ -221,7 +239,7 @@ func handleAddGapPeriod(ctx context.Context, s *model.Session, msg *models.Messa
 	s.TempEditedIn = ""
 	s.SaveSession()
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "➕ Добавлен период «unknown». Дата въезда обновлена."})
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "➕ Добавлен период «Не указано». Дата въезда обновлена."})
 	handlePeriodsCommand(ctx, s, msg, b)
 }
 
@@ -413,10 +431,22 @@ func handleEditOut(ctx context.Context, s *model.Session, msg *models.Message, b
 func handleEditCountry(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_new_country"
 	s.SaveSession()
+	sendCountryPrompt(ctx, s, msg, b, "🌍 Введите новое название страны:")
+}
+
+func sendCountryPrompt(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot, text string) {
+	countries := s.UsedCountries()
+	var kb *models.ReplyKeyboardMarkup
+	if len(countries) > 0 {
+		text += "\n\nИли выберите из ранее использованных:"
+		kb = keyboard.BuildCountrySelect(countries)
+	} else {
+		kb = keyboard.BuildBack()
+	}
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
-		Text:        "🌍 Введите новое название страны:",
-		ReplyMarkup: keyboard.BuildBack(),
+		Text:        text,
+		ReplyMarkup: kb,
 	})
 }
 
@@ -445,8 +475,44 @@ func handleAwaitingDeleteIndex(ctx context.Context, msg *models.Message, s *mode
 	}
 
 	idx := index - 1
+	p := s.Data.Periods[idx]
+	s.EditingIndex = idx
+	s.PendingAction = "awaiting_delete_confirm"
+	s.SaveSession()
+
+	countryName := p.Country
+	if countryName == "unknown" {
+		countryName = "Не указано"
+	}
+	in := p.In
+	if in == "" {
+		in = "—"
+	}
+	out := p.Out
+	if out == "" {
+		out = "н.в."
+	}
+
+	text := fmt.Sprintf("🗑 Удалить период %s (%s — %s)?", countryName, in, out)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        text,
+		ReplyMarkup: keyboard.BuildConfirm(),
+	})
+}
+
+func handleDeleteConfirmed(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
+	idx := s.EditingIndex
+	if idx < 0 || idx >= len(s.Data.Periods) {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Ошибка: индекс периода вне допустимого диапазона."})
+		s.PendingAction = ""
+		s.SaveSession()
+		return
+	}
+
 	s.Data.Periods = append(s.Data.Periods[:idx], s.Data.Periods[idx+1:]...)
 	s.PendingAction = ""
+	s.EditingIndex = 0
 	s.SaveSession()
 
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🗑 Период удалён."})
@@ -455,6 +521,27 @@ func handleAwaitingDeleteIndex(ctx context.Context, msg *models.Message, s *mode
 	} else {
 		handlePeriodsCommand(ctx, s, msg, b)
 	}
+}
+
+func handleExportCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
+	if s.IsEmpty() {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 Нет данных для экспорта."})
+		return
+	}
+	data, err := json.MarshalIndent(s.Data, "", "  ")
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Ошибка при формировании файла."})
+		return
+	}
+	b.SendDocument(ctx, &bot.SendDocumentParams{
+		ChatID: msg.Chat.ID,
+		Document: &models.InputFileUpload{
+			Filename: "tax_data.json",
+			Data:     bytes.NewReader(data),
+		},
+		Caption:     "📤 Ваши данные",
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
 // removeInlineKeyboard clears the inline keyboard from a message without deleting the message itself.

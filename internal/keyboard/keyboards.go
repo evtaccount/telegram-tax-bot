@@ -43,7 +43,7 @@ func BuildMainMenu(s *model.Session) *models.ReplyKeyboardMarkup {
 		row(btn("📊 Отчёт")),
 		row(btn("📅 Отчёт на заданную дату")),
 		row(btn("📎 Загрузить новый файл")),
-		row(btn("🗑 Сбросить")),
+		row(btn("📤 Экспорт"), btn("🗑 Сбросить")),
 		row(btn("ℹ️ Помощь")),
 		row(btn("📖 Команды")),
 	)
@@ -63,9 +63,9 @@ func BuildPeriodsMenu() *models.ReplyKeyboardMarkup {
 // BuildAddPeriodMenu returns keyboard for choosing type of period to add.
 func BuildAddPeriodMenu() *models.ReplyKeyboardMarkup {
 	return markup(
-		row(btn("🗓 Хвостовой (только выезд)")),
-		row(btn("⏮ Начальный (только въезд)")),
-		row(btn("📄 Полный (въезд+выезд)")),
+		row(btn("📄 Полный период (въезд + выезд)")),
+		row(btn("🔚 Был в стране до... (только вые��д)")),
+		row(btn("🔜 Прибыл и остаюсь (только въезд)")),
 		row(btn("❌ Отменить")),
 	)
 }
@@ -78,6 +78,28 @@ func BuildEditFieldMenu() *models.ReplyKeyboardMarkup {
 		row(btn("🌍 Изменить страну")),
 		row(btn("🔙 Назад")),
 	)
+}
+
+// BuildConfirm returns a keyboard with confirm/cancel buttons.
+func BuildConfirm() *models.ReplyKeyboardMarkup {
+	return markup(
+		row(btn("✅ Да, подтверждаю")),
+		row(btn("❌ Отменить")),
+	)
+}
+
+// BuildCountrySelect returns a keyboard with previously used countries + back button.
+// The user can also type a new country name as free text.
+func BuildCountrySelect(countries []string) *models.ReplyKeyboardMarkup {
+	var rows [][]models.KeyboardButton
+	for _, c := range countries {
+		rows = append(rows, row(btn(c)))
+	}
+	rows = append(rows, row(btn("🔙 Назад")))
+	return &models.ReplyKeyboardMarkup{
+		Keyboard:       rows,
+		ResizeKeyboard: true,
+	}
 }
 
 // BuildResolveOptions returns keyboard for conflict resolution with a move option.

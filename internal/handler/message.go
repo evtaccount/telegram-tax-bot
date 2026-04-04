@@ -62,6 +62,9 @@ func (r *Registry) handleMessage(ctx context.Context, b *bot.Bot, msg *models.Me
 	case text == "📅 Отчёт на заданную дату":
 		handleSetDateCommand(ctx, s, msg, b)
 		return
+	case text == "📤 Экспорт":
+		handleExportCommand(ctx, s, msg, b)
+		return
 	case text == "📋 Показать текущие данные":
 		handlePeriodsCommand(ctx, s, msg, b)
 		return
@@ -86,13 +89,13 @@ func (r *Registry) handleMessage(ctx context.Context, b *bot.Bot, msg *models.Me
 	case text == "🌍 Изменить страну":
 		handleEditCountry(ctx, s, msg, b)
 		return
-	case text == "🗓 Хвостовой (только выезд)":
+	case text == "🔚 Был в стране до... (только выезд)":
 		handleAddTail(ctx, s, msg, b)
 		return
-	case text == "⏮ Начальный (только въезд)":
+	case text == "🔜 Прибыл и остаюсь (только въезд)":
 		handleAddHead(ctx, s, msg, b)
 		return
-	case text == "📄 Полный (въезд+выезд)":
+	case text == "📄 Полный период (въезд + выезд)":
 		handleAddFull(ctx, s, msg, b)
 		return
 	case text == "📌 Подвинуть предыдущий период":
@@ -104,9 +107,23 @@ func (r *Registry) handleMessage(ctx context.Context, b *bot.Bot, msg *models.Me
 	case text == "✅ Оставить как есть":
 		handleKeepConflict(ctx, s, msg, b)
 		return
+	case text == "✅ Да, подтверждаю":
+		switch s.PendingAction {
+		case "awaiting_reset_confirm":
+			handleResetConfirmed(ctx, s, msg, b)
+		case "awaiting_delete_confirm":
+			handleDeleteConfirmed(ctx, s, msg, b)
+		default:
+			handleStartCommand(ctx, s, msg, b)
+		}
+		return
 	case text == "❌ Отменить":
 		if strings.HasPrefix(s.PendingAction, "resolve_") {
 			handleCancelEdit(ctx, s, msg, b)
+		} else if s.PendingAction == "awaiting_reset_confirm" || s.PendingAction == "awaiting_delete_confirm" {
+			s.PendingAction = ""
+			s.SaveSession()
+			handleStartCommand(ctx, s, msg, b)
 		} else if s.PendingAction == "" {
 			// Отмена выбора действия во время просмотра списка периодов
 			handlePeriodsCommand(ctx, s, msg, b)
@@ -237,8 +254,13 @@ func handleAwaitingNewIn(ctx context.Context, msg *models.Message, s *model.Sess
 				s.PendingAction = "resolve_in_conflict"
 				s.SaveSession()
 
-				text := fmt.Sprintf("⚠️ Новая дата въезда пересекается с предыдущим периодом (%s). Что сделать?",
-					utils.FormatDate(prevOut))
+				prevCountry := prev.Country
+				if prevCountry == "unknown" {
+					prevCountry = "Не указано"
+				}
+				newPrevOut := newDate.AddDate(0, 0, -1)
+				text := fmt.Sprintf("⚠️ Новая дата въезда (%s) пересекается с предыдущим периодом (%s, выезд %s).\n\n📌 Сдвинуть выезд из «%s» на %s\n✅ Оставить как есть (наложение)\n❌ Отменить",
+					utils.FormatDate(newDate), prevCountry, utils.FormatDate(prevOut), prevCountry, utils.FormatDate(newPrevOut))
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:      msg.Chat.ID,
 					Text:        text,
@@ -251,7 +273,7 @@ func handleAwaitingNewIn(ctx context.Context, msg *models.Message, s *model.Sess
 				s.PendingAction = "resolve_in_gap"
 				s.SaveSession()
 
-				text := fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?",
+				text := fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?\n\n📌 Добавить период «Не указано» для заполнения\n✅ Оставить разрыв\n❌ Отменить",
 					utils.FormatDate(prevOut.AddDate(0, 0, 1)), utils.FormatDate(newDate))
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:      msg.Chat.ID,
@@ -304,8 +326,13 @@ func handleAwaitingNewOut(ctx context.Context, msg *models.Message, s *model.Ses
 				s.PendingAction = "resolve_out_conflict"
 				s.SaveSession()
 
-				text := fmt.Sprintf("⚠️ Новая дата выезда пересекается со следующим периодом (%s). Что сделать?",
-					utils.FormatDate(nextIn))
+				nextCountry := next.Country
+				if nextCountry == "unknown" {
+					nextCountry = "Не указано"
+				}
+				newNextIn := newDate.AddDate(0, 0, 1)
+				text := fmt.Sprintf("⚠️ Новая дата выезда (%s) пересекается со следующим периодом (%s, въезд %s).\n\n📌 Сдвинуть въезд в «%s» на %s\n✅ Оставить как есть (наложение)\n❌ Отменить",
+					utils.FormatDate(newDate), nextCountry, utils.FormatDate(nextIn), nextCountry, utils.FormatDate(newNextIn))
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:      msg.Chat.ID,
 					Text:        text,
@@ -318,7 +345,7 @@ func handleAwaitingNewOut(ctx context.Context, msg *models.Message, s *model.Ses
 				s.PendingAction = "resolve_out_gap"
 				s.SaveSession()
 
-				text := fmt.Sprintf("⚠️ Между %s и %s образовался разрыв. Что сделать?",
+				text := fmt.Sprintf("⚠️ Между %s и %s образовался разрыв. Что сделать?\n\n📌 Сдвинуть следующий период\n✅ Оставить разрыв\n❌ Отменить",
 					utils.FormatDate(newDate.AddDate(0, 0, 1)), utils.FormatDate(nextIn))
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:      msg.Chat.ID,
@@ -339,7 +366,7 @@ func handleAwaitingNewOut(ctx context.Context, msg *models.Message, s *model.Ses
 }
 
 func handleAwaitingNewCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
-	newCountry := strings.TrimSpace(msg.Text)
+	newCountry := utils.NormalizeCountry(msg.Text)
 	if newCountry == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Название страны не может быть пустым."})
 		return
@@ -370,11 +397,11 @@ func handleAwaitingAddOut(ctx context.Context, msg *models.Message, s *model.Ses
 	s.Temp[0].Out = date.Format("02.01.2006")
 	s.PendingAction = "awaiting_add_country"
 	s.SaveSession()
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🌍 Укажите название страны:"})
+	sendCountryPrompt(ctx, s, msg, b, "🌍 Укажите название страны:")
 }
 
 func handleAwaitingAddCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
-	country := strings.TrimSpace(msg.Text)
+	country := utils.NormalizeCountry(msg.Text)
 	if country == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Страна не может быть пустой."})
 		return
@@ -419,7 +446,7 @@ func handleAwaitingAddCountry(ctx context.Context, msg *models.Message, s *model
 }
 
 func handleAddOpenCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
-	country := strings.TrimSpace(msg.Text)
+	country := utils.NormalizeCountry(msg.Text)
 	if country == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Название страны не может быть пустым"})
 		return
@@ -446,12 +473,11 @@ func handleAwaitingTailOut(ctx context.Context, msg *models.Message, s *model.Se
 	s.Temp = []model.Period{{Out: date.Format("02.01.2006")}}
 	s.PendingAction = "awaiting_tail_country"
 	s.SaveSession()
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🌍 Укажите название страны:"})
+	sendCountryPrompt(ctx, s, msg, b, "🌍 Укажите название страны:")
 }
 
 func handleAwaitingTailCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
-	country := strings.TrimSpace(msg.Text)
+	country := utils.NormalizeCountry(msg.Text)
 	if country == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Страна не может быть пустой."})
 		return
@@ -498,12 +524,11 @@ func handleAwaitingHeadIn(ctx context.Context, msg *models.Message, s *model.Ses
 	s.Temp = []model.Period{{In: date.Format("02.01.2006")}}
 	s.PendingAction = "awaiting_head_country"
 	s.SaveSession()
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🌍 Укажите название страны:"})
+	sendCountryPrompt(ctx, s, msg, b, "🌍 Укажите название страны:")
 }
 
 func handleAwaitingHeadCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
-	country := strings.TrimSpace(msg.Text)
+	country := utils.NormalizeCountry(msg.Text)
 	if country == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Страна не может быть пустой."})
 		return
@@ -571,6 +596,8 @@ func handleJSONInput(ctx context.Context, msg *models.Message, s *model.Session,
 }
 
 func handleInputFile(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⏳ Обрабатываю файл..."})
+
 	fileID := msg.Document.FileID
 	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
