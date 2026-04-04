@@ -1,37 +1,27 @@
 package handler
 
 import (
+	"context"
+
 	user_storage "telegram-tax-bot/internal/user_storage"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 type Registry struct {
-	bot *tgbotapi.BotAPI
 	ust *user_storage.UserStorage
 }
 
-// Register binds message/​callback handling and spawns update loop.
-func Register(api *tgbotapi.BotAPI, ust *user_storage.UserStorage) {
-	r := &Registry{bot: api, ust: ust}
-	go r.listen() // background
-}
-
-func (r *Registry) listen() {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 30
-
-	updates := r.bot.GetUpdatesChan(u)
-
-	for upd := range updates {
+// NewHandler returns a bot.HandlerFunc that dispatches messages and callbacks.
+func NewHandler(ust *user_storage.UserStorage) bot.HandlerFunc {
+	r := &Registry{ust: ust}
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		switch {
-		case upd.Message != nil:
-			// === 📌 Обработка текстовых сообщений ===
-			r.handleMessage(upd.Message)
-
-		case upd.CallbackQuery != nil:
-			// === 📌 Обработка callback кнопок ===
-			r.handleCallback(upd.CallbackQuery)
+		case update.Message != nil:
+			r.handleMessage(ctx, b, update.Message)
+		case update.CallbackQuery != nil:
+			r.handleCallback(ctx, b, update.CallbackQuery)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,99 +16,100 @@ import (
 
 	reportbuilder "telegram-tax-bot/internal/report_builder"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
-func (r *Registry) handleMessage(msg *tgbotapi.Message) {
+func (r *Registry) handleMessage(ctx context.Context, b *bot.Bot, msg *models.Message) {
 	userID := msg.From.ID
 	s := manager.GetSession(userID)
 	text := msg.Text
 
 	// ✅ Загрузка JSON-файла
 	if msg.Document != nil && s.Data.Current == "upload_pending" {
-		handleInputFile(msg, s, r.bot)
+		handleInputFile(ctx, msg, s, b)
 		return
 	}
 
 	// ✅ Команды и кнопки имеют приоритет над ожидаемыми действиями
 	switch {
 	case strings.HasPrefix(text, "/start"), text == "🔙 Назад в меню":
-		handleStartCommand(s, msg, r.bot)
+		handleStartCommand(ctx, s, msg, b)
 		return
 	case text == "🔙 Назад":
-		handleBack(s, msg, r.bot)
+		handleBack(ctx, s, msg, b)
 		return
 	case strings.HasPrefix(text, "/help"), text == "ℹ️ Помощь":
-		handleHelpCommand(msg, r.bot)
+		handleHelpCommand(ctx, msg, b)
 		return
 	case strings.HasPrefix(text, "/commands"), text == "📖 Команды":
-		handleCommandsCommand(msg, r.bot)
+		handleCommandsCommand(ctx, msg, b)
 		return
 	case text == "📎 Загрузить файл", text == "📎 Загрузить новый файл":
-		handleUploadCommand(s, msg, r.bot)
+		handleUploadCommand(ctx, s, msg, b)
 		return
 	case strings.HasPrefix(text, "/upload_report"):
-		handleUploadCommand(s, msg, r.bot)
+		handleUploadCommand(ctx, s, msg, b)
 		return
 	case text == "🗑 Сбросить", strings.HasPrefix(text, "/reset"):
-		handleResetCommand(s, msg, r.bot)
+		handleResetCommand(ctx, s, msg, b)
 		return
 	case strings.HasPrefix(text, "/periods"):
-		handlePeriodsCommand(s, msg, r.bot)
+		handlePeriodsCommand(ctx, s, msg, b)
 		return
 	case text == "📅 Отчёт на заданную дату":
-		handleSetDateCommand(s, msg, r.bot)
+		handleSetDateCommand(ctx, s, msg, b)
 		return
 	case text == "📋 Показать текущие данные":
-		handlePeriodsCommand(s, msg, r.bot)
+		handlePeriodsCommand(ctx, s, msg, b)
 		return
 	case text == "📊 Отчёт":
-		handleShowReport(s, msg, r.bot)
+		handleShowReport(ctx, s, msg, b)
 		return
 	case text == "✏️ Отредактировать период":
-		handleEditPeriod(s, msg, r.bot)
+		handleEditPeriod(ctx, s, msg, b)
 		return
 	case text == "➕ Добавить период":
-		handleAddPeriod(msg, r.bot)
+		handleAddPeriod(ctx, msg, b)
 		return
 	case text == "🗑 Удалить период":
-		handleDeletePeriod(s, msg, r.bot)
+		handleDeletePeriod(ctx, s, msg, b)
 		return
 	case text == "📅 Изменить дату въезда (in)":
-		handleEdinIn(s, msg, r.bot)
+		handleEdinIn(ctx, s, msg, b)
 		return
 	case text == "📆 Изменить дату выезда (out)":
-		handleEditOut(s, msg, r.bot)
+		handleEditOut(ctx, s, msg, b)
 		return
 	case text == "🌍 Изменить страну":
-		handleEditCountry(s, msg, r.bot)
+		handleEditCountry(ctx, s, msg, b)
 		return
 	case text == "🗓 Хвостовой (только выезд)":
-		handleAddTail(s, msg, r.bot)
+		handleAddTail(ctx, s, msg, b)
 		return
 	case text == "⏮ Начальный (только въезд)":
-		handleAddHead(s, msg, r.bot)
+		handleAddHead(ctx, s, msg, b)
 		return
 	case text == "📄 Полный (въезд+выезд)":
-		handleAddFull(s, msg, r.bot)
+		handleAddFull(ctx, s, msg, b)
 		return
 	case text == "📌 Подвинуть предыдущий период":
-		handleAdjustPrevOut(s, msg, r.bot)
+		handleAdjustPrevOut(ctx, s, msg, b)
 		return
 	case text == "📌 Подвинуть следующий период":
-		handleAdjustNextIn(s, msg, r.bot)
+		handleAdjustNextIn(ctx, s, msg, b)
 		return
 	case text == "✅ Оставить как есть":
-		handleKeepConflict(s, msg, r.bot)
+		handleKeepConflict(ctx, s, msg, b)
 		return
 	case text == "❌ Отменить":
 		if strings.HasPrefix(s.PendingAction, "resolve_") {
-			handleCancelEdit(s, msg, r.bot)
+			handleCancelEdit(ctx, s, msg, b)
 		} else if s.PendingAction == "" {
 			// Отмена выбора действия во время просмотра списка периодов
-			handlePeriodsCommand(s, msg, r.bot)
+			handlePeriodsCommand(ctx, s, msg, b)
 		} else {
-			handleStartCommand(s, msg, r.bot)
+			handleStartCommand(ctx, s, msg, b)
 		}
 		return
 	}
@@ -115,61 +117,61 @@ func (r *Registry) handleMessage(msg *tgbotapi.Message) {
 	// ✅ Ожидаемые действия
 	switch s.PendingAction {
 	case "awaiting_edit_index":
-		handleAwaitingEditIndex(msg, s, r.bot)
+		handleAwaitingEditIndex(ctx, msg, s, b)
 		return
 	case "awaiting_date":
-		handleAwaitingDate(msg, s, r.bot)
+		handleAwaitingDate(ctx, msg, s, b)
 		return
 	case "awaiting_new_in":
-		handleAwaitingNewIn(msg, s, r.bot)
+		handleAwaitingNewIn(ctx, msg, s, b)
 		return
 	case "awaiting_new_out":
-		handleAwaitingNewOut(msg, s, r.bot)
+		handleAwaitingNewOut(ctx, msg, s, b)
 		return
 	case "awaiting_new_country":
-		handleAwaitingNewCountry(msg, s, r.bot)
+		handleAwaitingNewCountry(ctx, msg, s, b)
 		return
 	case "awaiting_add_out":
-		handleAwaitingAddOut(msg, s, r.bot)
+		handleAwaitingAddOut(ctx, msg, s, b)
 		return
 	case "awaiting_add_country":
-		handleAwaitingAddCountry(msg, s, r.bot)
+		handleAwaitingAddCountry(ctx, msg, s, b)
 		return
 	case "awaiting_add_open_country":
-		handleAddOpenCountry(msg, s, r.bot)
+		handleAddOpenCountry(ctx, msg, s, b)
 		return
 	case "awaiting_tail_out":
-		handleAwaitingTailOut(msg, s, r.bot)
+		handleAwaitingTailOut(ctx, msg, s, b)
 		return
 	case "awaiting_tail_country":
-		handleAwaitingTailCountry(msg, s, r.bot)
+		handleAwaitingTailCountry(ctx, msg, s, b)
 		return
 	case "awaiting_head_in":
-		handleAwaitingHeadIn(msg, s, r.bot)
+		handleAwaitingHeadIn(ctx, msg, s, b)
 		return
 	case "awaiting_head_country":
-		handleAwaitingHeadCountry(msg, s, r.bot)
+		handleAwaitingHeadCountry(ctx, msg, s, b)
 		return
 	case "awaiting_delete_index":
-		handleAwaitingDeleteIndex(msg, s, r.bot)
+		handleAwaitingDeleteIndex(ctx, msg, s, b)
 		return
 	case "awaiting_add_in":
-		handleAddin(msg, s, r.bot)
+		handleAddin(ctx, msg, s, b)
 		return
 	}
 
 	if strings.HasPrefix(text, "{") {
-		handleJSONInput(msg, s, r.bot)
+		handleJSONInput(ctx, msg, s, b)
 	} else {
-		r.bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❓ Неизвестная команда. Введите /help, чтобы посмотреть список."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "❓ Неизвестная команда. Введите /help, чтобы посмотреть список."})
 	}
 }
 
-func handleAwaitingEditIndex(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingEditIndex(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	index, err := strconv.Atoi(strings.TrimSpace(msg.Text))
 
 	if err != nil || index < 1 || index > len(s.Data.Periods) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Введите корректный номер периода."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Введите корректный номер периода."})
 		return
 	}
 
@@ -177,38 +179,39 @@ func handleAwaitingEditIndex(msg *tgbotapi.Message, s *model.Session, bot *tgbot
 	s.PendingAction = "awaiting_edit_field"
 	s.SaveSession()
 
-	buttons := keyboard.BuildEditFieldMenu()
 	from := s.Data.Periods[s.EditingIndex].In
 	till := s.Data.Periods[s.EditingIndex].Out
 	msgText := fmt.Sprintf("Выбран период с %s по %s. Что изменить?", from, till)
-	msgToSend := tgbotapi.NewMessage(msg.Chat.ID, msgText)
-	msgToSend.ReplyMarkup = buttons
-	bot.Send(msgToSend)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        msgText,
+		ReplyMarkup: keyboard.BuildEditFieldMenu(),
+	})
 }
 
-func handleAwaitingDate(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingDate(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	date, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."})
 		return
 	}
 	s.Data.Current = date.Format("02.01.2006")
 	s.PendingAction = ""
 	s.SaveSession()
 	report := reportbuilder.BuildReport(s.Data)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report)))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: fmt.Sprintf("✅ Дата расчета установлена: %s\n\n%s", s.Data.Current, report)})
 }
 
-func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingNewIn(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	newDate, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты."})
 		return
 	}
 
 	index := s.EditingIndex
 	if index < 0 || index >= len(s.Data.Periods) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Ошибка: индекс периода вне допустимого диапазона."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Ошибка: индекс периода вне допустимого диапазона."})
 		return
 	}
 
@@ -216,8 +219,8 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 	oldDate, _ := utils.ParseDate(curr.In)
 	if newDate.Equal(oldDate) {
 		s.PendingAction = ""
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Дата въезда не изменилась."))
-		handlePeriodsCommand(s, msg, bot)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "ℹ️ Дата въезда не изменилась."})
+		handlePeriodsCommand(ctx, s, msg, b)
 		return
 	}
 
@@ -228,31 +231,31 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 		if err == nil {
 			switch {
 			case newDate.Before(prevOut):
-				// конфликт → предлагаем подвинуть out предыдущего периода
 				s.TempEditedIn = newDate.Format("02.01.2006")
 				s.PendingAction = "resolve_in_conflict"
 				s.SaveSession()
 
 				text := fmt.Sprintf("⚠️ Новая дата въезда пересекается с предыдущим периодом (%s). Что сделать?",
 					utils.FormatDate(prevOut))
-				markup := keyboard.BuildResolveOptions("📌 Подвинуть предыдущий период")
-				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
-				msg.ReplyMarkup = markup
-				bot.Send(msg)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:      msg.Chat.ID,
+					Text:        text,
+					ReplyMarkup: keyboard.BuildResolveOptions("📌 Подвинуть предыдущий период"),
+				})
 				return
 
 			case newDate.After(prevOut.AddDate(0, 0, 1)):
-				// зазор → предлагаем действия
 				s.TempEditedIn = newDate.Format("02.01.2006")
 				s.PendingAction = "resolve_in_gap"
 				s.SaveSession()
 
 				text := fmt.Sprintf("⚠️ Между %s и %s обнаружен разрыв. Что сделать?",
 					utils.FormatDate(prevOut.AddDate(0, 0, 1)), utils.FormatDate(newDate))
-				markup := keyboard.BuildResolveOptions("📌 Подвинуть предыдущий период")
-				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
-				msg.ReplyMarkup = markup
-				bot.Send(msg)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:      msg.Chat.ID,
+					Text:        text,
+					ReplyMarkup: keyboard.BuildResolveOptions("📌 Подвинуть предыдущий период"),
+				})
 				return
 			}
 		}
@@ -262,20 +265,20 @@ func handleAwaitingNewIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.
 	s.Data.Periods[index].In = newDate.Format("02.01.2006")
 	s.PendingAction = ""
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Дата въезда обновлена."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingNewOut(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	newDate, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты."})
 		return
 	}
 
 	index := s.EditingIndex
 	if index < 0 || index >= len(s.Data.Periods) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Ошибка: индекс периода вне допустимого диапазона."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Ошибка: индекс периода вне допустимого диапазона."})
 		return
 	}
 
@@ -283,8 +286,8 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 	oldDate, _ := utils.ParseDate(curr.Out)
 	if newDate.Equal(oldDate) {
 		s.PendingAction = ""
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "ℹ️ Дата выезда не изменилась."))
-		handlePeriodsCommand(s, msg, bot)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "ℹ️ Дата выезда не изменилась."})
+		handlePeriodsCommand(ctx, s, msg, b)
 		return
 	}
 
@@ -301,10 +304,11 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 
 				text := fmt.Sprintf("⚠️ Новая дата выезда пересекается со следующим периодом (%s). Что сделать?",
 					utils.FormatDate(nextIn))
-				markup := keyboard.BuildResolveOptions("📌 Подвинуть следующий период")
-				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
-				msg.ReplyMarkup = markup
-				bot.Send(msg)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:      msg.Chat.ID,
+					Text:        text,
+					ReplyMarkup: keyboard.BuildResolveOptions("📌 Подвинуть следующий период"),
+				})
 				return
 
 			case newDate.Before(nextIn.AddDate(0, 0, -1)):
@@ -314,10 +318,11 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 
 				text := fmt.Sprintf("⚠️ Между %s и %s образовался разрыв. Что сделать?",
 					utils.FormatDate(newDate.AddDate(0, 0, 1)), utils.FormatDate(nextIn))
-				markup := keyboard.BuildResolveOptions("📌 Подвинуть следующий период")
-				msg := tgbotapi.NewMessage(msg.Chat.ID, text)
-				msg.ReplyMarkup = markup
-				bot.Send(msg)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:      msg.Chat.ID,
+					Text:        text,
+					ReplyMarkup: keyboard.BuildResolveOptions("📌 Подвинуть следующий период"),
+				})
 				return
 			}
 		}
@@ -327,53 +332,53 @@ func handleAwaitingNewOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 	s.Data.Periods[index].Out = newDate.Format("02.01.2006")
 	s.PendingAction = ""
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Дата выезда обновлена."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAwaitingNewCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingNewCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	newCountry := strings.TrimSpace(msg.Text)
 	if newCountry == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Название страны не может быть пустым."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Название страны не может быть пустым."})
 		return
 	}
 	s.Data.Periods[s.EditingIndex].Country = newCountry
 	s.PendingAction = ""
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Страна обновлена."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Страна обновлена."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAwaitingAddOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingAddOut(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	if len(s.Temp) == 0 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка. Начните добавление заново."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Внутренняя ошибка. Начните добавление заново."})
 		s.PendingAction = ""
 		return
 	}
 	date, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."})
 		return
 	}
 	inDate, err := utils.ParseDate(s.Temp[0].In)
 	if err != nil || date.Before(inDate) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Дата выезда не может быть раньше даты въезда."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Дата выезда не может быть раньше даты въезда."})
 		return
 	}
 	s.Temp[0].Out = date.Format("02.01.2006")
 	s.PendingAction = "awaiting_add_country"
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Укажите название страны:"))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🌍 Укажите название страны:"})
 }
 
-func handleAwaitingAddCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingAddCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	country := strings.TrimSpace(msg.Text)
 	if country == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Страна не может быть пустой."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Страна не может быть пустой."})
 		return
 	}
 	if len(s.Temp) == 0 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка: временный буфер пуст."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Внутренняя ошибка: временный буфер пуст."})
 		s.PendingAction = ""
 		return
 	}
@@ -383,7 +388,7 @@ func handleAwaitingAddCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbo
 	// Проверка хронологического порядка
 	newIn, errIn := utils.ParseDate(period.In)
 	if errIn != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Некорректная дата въезда."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Некорректная дата въезда."})
 		return
 	}
 
@@ -395,7 +400,7 @@ func handleAwaitingAddCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbo
 		}
 		lastOutDate, err := utils.ParseDate(lastOut)
 		if err == nil && newIn.Before(lastOutDate) {
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Невозможно добавить период: нарушен хронологический порядок."))
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Невозможно добавить период: нарушен хронологический порядок."})
 			s.PendingAction = ""
 			s.Temp = nil
 			return
@@ -407,14 +412,14 @@ func handleAwaitingAddCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbo
 	s.PendingAction = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Новый период добавлен."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAddOpenCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAddOpenCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	country := strings.TrimSpace(msg.Text)
 	if country == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Название страны не может быть пустым"))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Название страны не может быть пустым"})
 		return
 	}
 	s.Data.Periods = append(s.Data.Periods, model.Period{
@@ -425,14 +430,14 @@ func handleAddOpenCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 	s.PendingAction = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Новый период добавлен."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAwaitingTailOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingTailOut(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	date, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."})
 		return
 	}
 
@@ -440,17 +445,17 @@ func handleAwaitingTailOut(msg *tgbotapi.Message, s *model.Session, bot *tgbotap
 	s.PendingAction = "awaiting_tail_country"
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Укажите название страны:"))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🌍 Укажите название страны:"})
 }
 
-func handleAwaitingTailCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingTailCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	country := strings.TrimSpace(msg.Text)
 	if country == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Страна не может быть пустой."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Страна не может быть пустой."})
 		return
 	}
 	if len(s.Temp) == 0 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка: начните добавление заново."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Внутренняя ошибка: начните добавление заново."})
 		s.PendingAction = ""
 		return
 	}
@@ -464,7 +469,7 @@ func handleAwaitingTailCountry(msg *tgbotapi.Message, s *model.Session, bot *tgb
 			firstIn, err := utils.ParseDate(first.In)
 			outDate, errOut := utils.ParseDate(period.Out)
 			if err == nil && errOut == nil && outDate.After(firstIn) {
-				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Дата выезда не может быть после начала первого периода."))
+				b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Дата выезда не может быть после начала первого периода."})
 				s.PendingAction = ""
 				s.Temp = nil
 				return
@@ -477,14 +482,14 @@ func handleAwaitingTailCountry(msg *tgbotapi.Message, s *model.Session, bot *tgb
 	s.Temp = nil
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Новый период добавлен."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAwaitingHeadIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingHeadIn(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	date, err := utils.ParseDate(msg.Text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты. Используйте ДД.ММ.ГГГГ."})
 		return
 	}
 
@@ -492,17 +497,17 @@ func handleAwaitingHeadIn(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi
 	s.PendingAction = "awaiting_head_country"
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🌍 Укажите название страны:"))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🌍 Укажите название страны:"})
 }
 
-func handleAwaitingHeadCountry(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingHeadCountry(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	country := strings.TrimSpace(msg.Text)
 	if country == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Страна не может быть пустой."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Страна не может быть пустой."})
 		return
 	}
 	if len(s.Temp) == 0 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Внутренняя ошибка: временный буфер пуст."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Внутренняя ошибка: временный буфер пуст."})
 		s.PendingAction = ""
 		return
 	}
@@ -519,7 +524,7 @@ func handleAwaitingHeadCountry(msg *tgbotapi.Message, s *model.Session, bot *tgb
 		newIn, err1 := utils.ParseDate(period.In)
 		lastOutDate, err2 := utils.ParseDate(lastOut)
 		if err1 == nil && err2 == nil && newIn.Before(lastOutDate) {
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Невозможно добавить период: нарушен хронологический порядок."))
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Невозможно добавить период: нарушен хронологический порядок."})
 			s.PendingAction = ""
 			s.Temp = nil
 			return
@@ -531,28 +536,28 @@ func handleAwaitingHeadCountry(msg *tgbotapi.Message, s *model.Session, bot *tgb
 	s.Temp = nil
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Новый период добавлен."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Новый период добавлен."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAddin(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAddin(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	text := strings.TrimSpace(msg.Text)
 	_, err := utils.ParseDate(text)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Неверный формат даты. Введите ДД.ММ.ГГГГ."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Неверный формат даты. Введите ДД.ММ.ГГГГ."})
 		return
 	}
-	s.Temp = []model.Period{{In: text}} // сохраняем только дату in во временное хранилище
+	s.Temp = []model.Period{{In: text}}
 	s.PendingAction = "awaiting_add_out"
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.ММ.ГГГГ):"))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📆 Введите дату выезда (ДД.ММ.ГГГГ):"})
 }
 
-func handleJSONInput(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleJSONInput(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	s.BackupSession()
 	err := json.Unmarshal([]byte(msg.Text), &s.Data)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка в формате JSON."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Ошибка в формате JSON."})
 		return
 	}
 	if s.Data.Current == "" {
@@ -560,17 +565,20 @@ func handleJSONInput(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotA
 	}
 	s.SaveSession()
 	report := reportbuilder.BuildReport(s.Data)
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, report))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: report})
 }
 
-func handleInputFile(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleInputFile(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	fileID := msg.Document.FileID
-	file, _ := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
-	url := file.Link(bot.Token)
-	resp, err := http.Get(url)
-
+	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Не удалось загрузить файл."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Не удалось получить файл."})
+		return
+	}
+	url := b.FileDownloadLink(file)
+	resp, err := http.Get(url)
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Не удалось загрузить файл."})
 		return
 	}
 
@@ -579,5 +587,5 @@ func handleInputFile(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotA
 
 	msg.Text = string(body)
 	s.Data.Current = "" // сбрасываем флаг после загрузки
-	handleJSONInput(msg, s, bot)
+	handleJSONInput(ctx, msg, s, b)
 }

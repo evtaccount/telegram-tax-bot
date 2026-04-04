@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -12,85 +13,92 @@ import (
 
 	reportbuilder "telegram-tax-bot/internal/report_builder"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
-func (r *Registry) handleCallback(callback *tgbotapi.CallbackQuery) {
+func (r *Registry) handleCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
 	userID := callback.From.ID
 	session := manager.GetSession(userID)
 	data := callback.Data
-	chatID := callback.Message.Chat.ID
-	message := callback.Message
+
+	msg := callback.Message.Message
+	if msg == nil {
+		return
+	}
+	chatID := msg.Chat.ID
 
 	// Remove inline keyboard from the message that triggered the callback
-	removeInlineKeyboard(r.bot, chatID, message.MessageID)
+	removeInlineKeyboard(ctx, b, chatID, msg.ID)
 
 	switch data {
 	case "start":
-		handleStartCommand(session, message, r.bot)
+		handleStartCommand(ctx, session, msg, b)
 	case "help":
-		handleHelpCommand(message, r.bot)
+		handleHelpCommand(ctx, msg, b)
 	case "reset":
-		handleResetCommand(session, message, r.bot)
+		handleResetCommand(ctx, session, msg, b)
 	case "set_date":
-		handleSetDateCommand(session, message, r.bot)
+		handleSetDateCommand(ctx, session, msg, b)
 	case "upload_report", "upload_file":
-		handleUploadCommand(session, message, r.bot)
+		handleUploadCommand(ctx, session, msg, b)
 	case "periods":
-		handlePeriodsCommand(session, message, r.bot)
+		handlePeriodsCommand(ctx, session, msg, b)
 	case "add_gap_period":
-		handleAddGapPeriod(session, callback, r.bot)
+		handleAddGapPeriod(ctx, session, msg, b)
 	case "adjust_next_in":
-		handleAdjustNextIn(session, message, r.bot)
+		handleAdjustNextIn(ctx, session, msg, b)
 	case "keep_conflict":
-		handleKeepConflict(session, message, r.bot)
+		handleKeepConflict(ctx, session, msg, b)
 	case "cancel_edit":
-		handleCancelEdit(session, message, r.bot)
+		handleCancelEdit(ctx, session, msg, b)
 	case "show_report":
-		handleShowReport(session, message, r.bot)
+		handleShowReport(ctx, session, msg, b)
 
 	case "add_period":
-		handleAddPeriod(message, r.bot)
+		handleAddPeriod(ctx, msg, b)
 
 	case "add_tail":
-		handleAddTail(session, message, r.bot)
+		handleAddTail(ctx, session, msg, b)
 
 	case "add_head":
-		handleAddHead(session, message, r.bot)
+		handleAddHead(ctx, session, msg, b)
 
 	case "add_full":
-		handleAddFull(session, message, r.bot)
+		handleAddFull(ctx, session, msg, b)
 
 	case "edit_period":
-		handleEditPeriod(session, message, r.bot)
+		handleEditPeriod(ctx, session, msg, b)
 
 	case "adjust_prev_out":
-		handleAdjustPrevOut(session, callback.Message, r.bot)
-		handlePeriodsCommand(session, callback.Message, r.bot)
+		handleAdjustPrevOut(ctx, session, msg, b)
+		handlePeriodsCommand(ctx, session, msg, b)
 
 	case "edit_in":
-		handleEdinIn(session, callback.Message, r.bot)
+		handleEdinIn(ctx, session, msg, b)
 
 	case "edit_out":
-		handleEditOut(session, callback.Message, r.bot)
+		handleEditOut(ctx, session, msg, b)
 
 	case "edit_country":
-		handleEditCountry(session, callback.Message, r.bot)
+		handleEditCountry(ctx, session, msg, b)
 
 	default:
-		r.bot.Send(tgbotapi.NewMessage(chatID, "❓ Неизвестная кнопка."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "❓ Неизвестная кнопка."})
 	}
 
-	r.bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+	b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: callback.ID})
 }
 
-func handleStartCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
-	reply := tgbotapi.NewMessage(msg.Chat.ID, "🔘 Выберите действие:")
-	reply.ReplyMarkup = keyboard.BuildMainMenu(s)
-	bot.Send(reply)
+func handleStartCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "🔘 Выберите действие:",
+		ReplyMarkup: keyboard.BuildMainMenu(s),
+	})
 }
 
-func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleHelpCommand(ctx context.Context, msg *models.Message, b *bot.Bot) {
 	helpText := `ℹ️ Этот бот помогает определить налоговое резидентство на основе загруженных периодов пребывания в разных странах.
 
 📎 С чего начать?
@@ -111,25 +119,29 @@ func handleHelpCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
 
 💬 Используйте /start для возврата в главное меню.`
 
-	newMsg := tgbotapi.NewMessage(msg.Chat.ID, helpText)
-	newMsg.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(newMsg)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        helpText,
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleCommandsCommand(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleCommandsCommand(ctx context.Context, msg *models.Message, b *bot.Bot) {
 	txt := `/start - главное меню
 /help - справка
 /upload_report - загрузить данные
 /periods - показать периоды
 /reset - сбросить данные`
-	newMsg := tgbotapi.NewMessage(msg.Chat.ID, txt)
-	newMsg.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(newMsg)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        txt,
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleResetCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleResetCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.IsEmpty() {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 У вас пока нет сохранённых периодов."})
 		return
 	}
 	s.Data = model.Data{}
@@ -138,43 +150,48 @@ func handleResetCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 	_ = os.Remove(fmt.Sprintf("%s/data.json", s.HistoryDir))
 	s.SaveSession()
 
-	newMsg := tgbotapi.NewMessage(msg.Chat.ID, "✅ Данные сброшены.")
-	newMsg.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(newMsg)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "✅ Данные сброшены.",
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleSetDateCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleSetDateCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.IsEmpty() {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 У вас пока нет сохранённых периодов."})
 		return
 	}
 	s.PendingAction = "awaiting_date"
 	s.SaveSession()
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📅 Введите дату в формате ДД.ММ.ГГГГ:"))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📅 Введите дату в формате ДД.ММ.ГГГГ:"})
 }
 
-func handleUploadCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleUploadCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.Data.Current = "upload_pending"
 	s.SaveSession()
 
-	newMsg := tgbotapi.NewMessage(msg.Chat.ID, "📎 Пришлите JSON-файл документом.")
-	newMsg.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(newMsg)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "📎 Пришлите JSON-файл документом.",
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handlePeriodsCommand(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handlePeriodsCommand(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.IsEmpty() {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 У вас пока нет сохранённых периодов."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 У вас пока нет сохранённых периодов."})
 		return
 	}
-	msgText := s.BuildPeriodsList()
-	newMsg := tgbotapi.NewMessage(msg.Chat.ID, msgText)
-	newMsg.ReplyMarkup = keyboard.BuildPeriodsMenu()
-	bot.Send(newMsg)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        s.BuildPeriodsList(),
+		ReplyMarkup: keyboard.BuildPeriodsMenu(),
+	})
 }
 
-func handleAddGapPeriod(s *model.Session, callback *tgbotapi.CallbackQuery, bot *tgbotapi.BotAPI) {
-	chatID := callback.Message.Chat.ID
+func handleAddGapPeriod(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
+	chatID := msg.Chat.ID
 
 	newIn, _ := utils.ParseDate(s.TempEditedIn)
 	prev := s.Data.Periods[s.EditingIndex-1]
@@ -202,20 +219,20 @@ func handleAddGapPeriod(s *model.Session, callback *tgbotapi.CallbackQuery, bot 
 	s.TempEditedIn = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(chatID, "➕ Добавлен период «unknown». Дата въезда обновлена."))
-	handlePeriodsCommand(s, callback.Message, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "➕ Добавлен период «unknown». Дата въезда обновлена."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleAdjustNextIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleAdjustNextIn(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	index := s.EditingIndex
 	if index+1 >= len(s.Data.Periods) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка: следующего периода не существует."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Ошибка: следующего периода не существует."})
 		return
 	}
 
 	newOut, err := utils.ParseDate(s.TempEditedOut)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Ошибка при обработке даты."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Ошибка при обработке даты."})
 		return
 	}
 
@@ -227,110 +244,117 @@ func handleAdjustNextIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 	s.TempEditedOut = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Следующий период сдвинут, дата выезда обновлена."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📌 Следующий период сдвинут, дата выезда обновлена."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleKeepConflict(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleKeepConflict(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.PendingAction == "confirm_conflict_in" {
 		s.Data.Periods[s.EditingIndex].In = s.TempEditedIn
 		s.PendingAction = ""
 		s.SaveSession()
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата въезда обновлена."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Дата въезда обновлена."})
 	} else if s.PendingAction == "confirm_conflict_out" {
 		s.Data.Periods[s.EditingIndex].Out = s.TempEditedOut
 		s.PendingAction = ""
 		s.SaveSession()
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "✅ Дата выезда обновлена."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "✅ Дата выезда обновлена."})
 	} else {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⚠️ Нет ожидаемого конфликта."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⚠️ Нет ожидаемого конфликта."})
 		return
 	}
 
-	handlePeriodsCommand(s, msg, bot)
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleCancelEdit(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleCancelEdit(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = ""
 	s.TempEditedOut = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Изменение отменено."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "❌ Изменение отменено."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
 // handleBack cancels the current step and shows the appropriate menu.
-func handleBack(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleBack(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	switch s.PendingAction {
 	case "awaiting_edit_index":
 		s.PendingAction = ""
 		s.SaveSession()
-		handlePeriodsCommand(s, msg, bot)
+		handlePeriodsCommand(ctx, s, msg, b)
 	case "awaiting_delete_index":
 		s.PendingAction = ""
 		s.SaveSession()
-		handlePeriodsCommand(s, msg, bot)
+		handlePeriodsCommand(ctx, s, msg, b)
 	case "awaiting_edit_field":
-		handleEditPeriod(s, msg, bot)
+		handleEditPeriod(ctx, s, msg, b)
 	case "awaiting_new_in", "awaiting_new_out", "awaiting_new_country":
 		s.PendingAction = "awaiting_edit_field"
 		s.SaveSession()
-		buttons := keyboard.BuildEditFieldMenu()
 		from := s.Data.Periods[s.EditingIndex].In
 		till := s.Data.Periods[s.EditingIndex].Out
 		txt := fmt.Sprintf("Выбран период с %s по %s. Что изменить?", from, till)
-		reply := tgbotapi.NewMessage(msg.Chat.ID, txt)
-		reply.ReplyMarkup = buttons
-		bot.Send(reply)
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      msg.Chat.ID,
+			Text:        txt,
+			ReplyMarkup: keyboard.BuildEditFieldMenu(),
+		})
 	default:
-		handleStartCommand(s, msg, bot)
+		handleStartCommand(ctx, s, msg, b)
 	}
 }
 
-func handleShowReport(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleShowReport(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	report := reportbuilder.BuildReport(s.Data)
-	reply := tgbotapi.NewMessage(msg.Chat.ID, report)
-	reply.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(reply)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        report,
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleAddPeriod(msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
-	// меню выбора варианта добавления
-	reply := tgbotapi.NewMessage(msg.Chat.ID, "➕ Что добавить?")
-	reply.ReplyMarkup = keyboard.BuildAddPeriodMenu()
-	bot.Send(reply)
+func handleAddPeriod(ctx context.Context, msg *models.Message, b *bot.Bot) {
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "➕ Что добавить?",
+		ReplyMarkup: keyboard.BuildAddPeriodMenu(),
+	})
 }
 
-func handleAddTail(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleAddTail(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_tail_out"
 	s.SaveSession()
-
-	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату выезда (ДД.ММ.ГГГГ):")
-	replay.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(replay)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "📆 Введите дату выезда (ДД.ММ.ГГГГ):",
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleAddHead(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleAddHead(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_head_in"
 	s.SaveSession()
-
-	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.ММ.ГГГГ):")
-	replay.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(replay)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "📆 Введите дату въезда (ДД.ММ.ГГГГ):",
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleAddFull(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleAddFull(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_add_in"
 	s.SaveSession()
-
-	replay := tgbotapi.NewMessage(msg.Chat.ID, "📆 Введите дату въезда (ДД.ММ.ГГГГ):")
-	replay.ReplyMarkup = keyboard.BuildBackToMenu()
-	bot.Send(replay)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "📆 Введите дату въезда (ДД.ММ.ГГГГ):",
+		ReplyMarkup: keyboard.BuildBackToMenu(),
+	})
 }
 
-func handleEditPeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleEditPeriod(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.IsEmpty() {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для редактирования."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 Нет сохранённых периодов для редактирования."})
 		return
 	}
 
@@ -338,12 +362,14 @@ func handleEditPeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.Bot
 	s.SaveSession()
 
 	text := s.BuildPeriodsList() + "\n✏️ Введите номер периода для редактирования:"
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ReplyMarkup = keyboard.BuildBack()
-	bot.Send(reply)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        text,
+		ReplyMarkup: keyboard.BuildBack(),
+	})
 }
 
-func handleAdjustPrevOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleAdjustPrevOut(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	newIn, _ := utils.ParseDate(s.TempEditedIn)
 
 	s.Data.Periods[s.EditingIndex-1].Out = newIn.Format("02.01.2006")
@@ -352,39 +378,45 @@ func handleAdjustPrevOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.
 	s.TempEditedIn = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📌 Предыдущий период подвинут. Дата въезда обновлена."))
-	handlePeriodsCommand(s, msg, bot)
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📌 Предыдущий период подвинут. Дата въезда обновлена."})
+	handlePeriodsCommand(ctx, s, msg, b)
 }
 
-func handleEdinIn(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleEdinIn(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_new_in"
 	s.SaveSession()
 	curr := s.Data.Periods[s.EditingIndex].In
-	reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата въезда: %s. Введите новую:", curr))
-	reply.ReplyMarkup = keyboard.BuildBack()
-	bot.Send(reply)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        fmt.Sprintf("✏️ Текущая дата въезда: %s. Введите новую:", curr),
+		ReplyMarkup: keyboard.BuildBack(),
+	})
 }
 
-func handleEditOut(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleEditOut(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_new_out"
 	s.SaveSession()
 	curr := s.Data.Periods[s.EditingIndex].Out
-	reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("✏️ Текущая дата выезда: %s. Введите новую:", curr))
-	reply.ReplyMarkup = keyboard.BuildBack()
-	bot.Send(reply)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        fmt.Sprintf("✏️ Текущая дата выезда: %s. Введите новую:", curr),
+		ReplyMarkup: keyboard.BuildBack(),
+	})
 }
 
-func handleEditCountry(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleEditCountry(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	s.PendingAction = "awaiting_new_country"
 	s.SaveSession()
-	reply := tgbotapi.NewMessage(msg.Chat.ID, "🌍 Введите новое название страны:")
-	reply.ReplyMarkup = keyboard.BuildBack()
-	bot.Send(reply)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        "🌍 Введите новое название страны:",
+		ReplyMarkup: keyboard.BuildBack(),
+	})
 }
 
-func handleDeletePeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.BotAPI) {
+func handleDeletePeriod(ctx context.Context, s *model.Session, msg *models.Message, b *bot.Bot) {
 	if s.IsEmpty() {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "📭 Нет сохранённых периодов для удаления."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "📭 Нет сохранённых периодов для удаления."})
 		return
 	}
 
@@ -392,15 +424,17 @@ func handleDeletePeriod(s *model.Session, msg *tgbotapi.Message, bot *tgbotapi.B
 	s.SaveSession()
 
 	text := s.BuildPeriodsList() + "\n🗑 Введите номер периода для удаления:"
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ReplyMarkup = keyboard.BuildBack()
-	bot.Send(reply)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      msg.Chat.ID,
+		Text:        text,
+		ReplyMarkup: keyboard.BuildBack(),
+	})
 }
 
-func handleAwaitingDeleteIndex(msg *tgbotapi.Message, s *model.Session, bot *tgbotapi.BotAPI) {
+func handleAwaitingDeleteIndex(ctx context.Context, msg *models.Message, s *model.Session, b *bot.Bot) {
 	index, err := strconv.Atoi(strings.TrimSpace(msg.Text))
 	if err != nil || index < 1 || index > len(s.Data.Periods) {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⛔ Введите корректный номер периода."))
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⛔ Введите корректный номер периода."})
 		return
 	}
 
@@ -409,11 +443,11 @@ func handleAwaitingDeleteIndex(msg *tgbotapi.Message, s *model.Session, bot *tgb
 	s.PendingAction = ""
 	s.SaveSession()
 
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🗑 Период удалён."))
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "🗑 Период удалён."})
 	if s.IsEmpty() {
-		handleStartCommand(s, msg, bot)
+		handleStartCommand(ctx, s, msg, b)
 	} else {
-		handlePeriodsCommand(s, msg, bot)
+		handlePeriodsCommand(ctx, s, msg, b)
 	}
 }
 
@@ -441,11 +475,14 @@ func formatPeriodList(periods []model.Period, current string) string {
 }
 
 // removeInlineKeyboard clears the inline keyboard from a message without deleting the message itself.
-func removeInlineKeyboard(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
-	empty := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{},
-	})
+func removeInlineKeyboard(ctx context.Context, b *bot.Bot, chatID int64, messageID int) {
 	// Telegram may return an error if the message is too old or was already
 	// edited — silently ignore to avoid losing the user's message history.
-	bot.Send(empty)
+	b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		ReplyMarkup: models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{},
+		},
+	})
 }
