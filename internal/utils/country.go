@@ -1,6 +1,30 @@
 package utils
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
+
+// NormalizeCountry applies Title Case to a country name.
+func NormalizeCountry(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return name
+	}
+	// Title case: first letter of each word uppercase, rest lowercase.
+	runes := []rune(strings.ToLower(name))
+	capitalize := true
+	for i, r := range runes {
+		if capitalize && unicode.IsLetter(r) {
+			runes[i] = unicode.ToUpper(r)
+			capitalize = false
+		}
+		if unicode.IsSpace(r) || r == '-' {
+			capitalize = true
+		}
+	}
+	return string(runes)
+}
 
 func CountryToFlag(isoCode string) string {
 	isoCode = strings.ToUpper(isoCode)
