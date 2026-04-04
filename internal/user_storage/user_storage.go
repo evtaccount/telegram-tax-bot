@@ -10,18 +10,18 @@ type Storage interface {
 	Save(model.UserData) error
 }
 
-type UserStorate struct {
+type UserStorage struct {
 	st Storage
 }
 
-func NewUserStorage(st Storage) *UserStorate {
-	return &UserStorate{st: st}
+func NewUserStorage(st Storage) *UserStorage {
+	return &UserStorage{st: st}
 }
 
-func (ss *UserStorate) LoadUser(chatID int64) (model.UserData, error) {
+func (ss *UserStorage) LoadUser(chatID int64) (model.UserData, error) {
 	return ss.st.Load(chatID)
 }
 
-func (ss *UserStorate) SaveUser(data model.UserData) error {
+func (ss *UserStorage) SaveUser(data model.UserData) error {
 	return ss.st.Save(data)
 }

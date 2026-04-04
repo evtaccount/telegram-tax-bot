@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"telegram-tax-bot/internal/utils"
@@ -21,14 +22,26 @@ type Session struct {
 }
 
 func (s *Session) BackupSession() {
-	bytes, _ := json.MarshalIndent(s.Data, "", "  ")
-	_ = os.WriteFile(fmt.Sprintf("%s/backup.json", s.HistoryDir), bytes, 0644)
+	bytes, err := json.MarshalIndent(s.Data, "", "  ")
+	if err != nil {
+		log.Printf("backup marshal error (user %d): %v", s.UserID, err)
+		return
+	}
+	if err := os.WriteFile(fmt.Sprintf("%s/backup.json", s.HistoryDir), bytes, 0644); err != nil {
+		log.Printf("backup write error (user %d): %v", s.UserID, err)
+	}
 	s.Backup = s.Data
 }
 
 func (s *Session) SaveSession() {
-	bytes, _ := json.MarshalIndent(s, "", "  ")
-	_ = os.WriteFile(fmt.Sprintf("%s/session.json", s.HistoryDir), bytes, 0644)
+	bytes, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		log.Printf("session marshal error (user %d): %v", s.UserID, err)
+		return
+	}
+	if err := os.WriteFile(fmt.Sprintf("%s/session.json", s.HistoryDir), bytes, 0644); err != nil {
+		log.Printf("session write error (user %d): %v", s.UserID, err)
+	}
 }
 
 func (s *Session) LoadUserData() {

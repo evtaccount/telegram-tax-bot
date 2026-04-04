@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"telegram-tax-bot/internal/config"
@@ -14,7 +15,9 @@ type FileStorage struct {
 }
 
 func NewFileStorage(dir string) *FileStorage {
-	_ = os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("file storage: failed to create directory %s: %v", dir, err)
+	}
 	return &FileStorage{dir: dir}
 }
 
@@ -53,7 +56,9 @@ func (fs *FileStorage) Save(data model.UserData) error {
 }
 
 func EnsureDirs(userID int64) string {
-	path := fmt.Sprintf("%s/%d", config.DataDir, userID)
-	os.MkdirAll(path, 0755)
+	path := filepath.Join(config.DataDir, fmt.Sprintf("%d", userID))
+	if err := os.MkdirAll(path, 0755); err != nil {
+		log.Printf("ensure dirs: failed to create %s: %v", path, err)
+	}
 	return path
 }

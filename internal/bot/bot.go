@@ -1,36 +1,30 @@
 package bot
 
 import (
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"context"
+
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
-// Bot is a thin wrapper that exposes underlying API plus a blocking Run().
-type Bot struct {
-	API *tgbotapi.BotAPI
-}
-
-func New(token string) (*Bot, error) {
-	api, err := tgbotapi.NewBotAPI(token)
-
+// New creates a bot instance with the given token and default handler, registers
+// the command menu, and returns it ready to Start.
+func New(token string, handler bot.HandlerFunc) (*bot.Bot, error) {
+	b, err := bot.New(token, bot.WithDefaultHandler(handler))
 	if err != nil {
 		return nil, err
 	}
 
-	api.Debug = false
-	// set command menu similar to BotFather
-	commands := []tgbotapi.BotCommand{
-		{Command: "start", Description: "главное меню"},
-		{Command: "help", Description: "справка"},
-		{Command: "upload_report", Description: "загрузить данные"},
-		{Command: "periods", Description: "показать периоды"},
-		{Command: "reset", Description: "сбросить данные"},
-		{Command: "commands", Description: "список команд"},
-	}
-	_, _ = api.Request(tgbotapi.NewSetMyCommands(commands...))
-	return &Bot{API: api}, nil
-}
+	b.SetMyCommands(context.Background(), &bot.SetMyCommandsParams{
+		Commands: []models.BotCommand{
+			{Command: "start", Description: "главное меню"},
+			{Command: "help", Description: "справка"},
+			{Command: "upload_report", Description: "загрузить данные"},
+			{Command: "periods", Description: "показать периоды"},
+			{Command: "reset", Description: "сбросить данные"},
+			{Command: "commands", Description: "список команд"},
+		},
+	})
 
-// Run blocks forever; all handling goroutines are launched elsewhere.
-func (b *Bot) Run() {
-	select {}
+	return b, nil
 }
